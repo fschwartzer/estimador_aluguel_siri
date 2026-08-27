@@ -12,9 +12,9 @@ para planilhas do SIRI ou bases de anúncios com cabeçalhos usuais.
 | **Interface** | Aplicativo web em Streamlit |
 | **Método** | K-vizinhos mais próximos (KNN) |
 | **Entrada** | Planilhas Excel nos formatos `.xlsx`, `.xlsm` ou `.xls` |
-| **Saída** | Estimativa, comparáveis, mapa, diagnósticos e relatório Excel |
+| **Saída** | Estimativa, comparáveis, mapa e relatórios Excel/PDF |
 | **Abrangência** | Imóveis prediais e territoriais |
-| **Versão atual** | LITE 1.18.0 · núcleo 6.12.0 |
+| **Versão atual** | LITE 1.19.0 · núcleo 6.12.0 |
 
 ## O que o aplicativo faz
 
@@ -62,6 +62,8 @@ estimativa, evitando misturar denominadores incompatíveis.
 - controle de conflitos tipológicos;
 - limite para o peso individual de cada comparável;
 - mapa interativo do avaliando e dos comparáveis;
+- relatório sintético de inferência em PDF, com mapa Claro - CARTO Positron,
+  valor unitário, valor total, COD local, confiança e comparáveis;
 - alertas de extrapolação, cobertura e concentração dos pesos;
 - exportação de comparáveis, diagnósticos, exclusões e alertas para Excel.
 
@@ -75,7 +77,7 @@ estimativa, evitando misturar denominadores incompatíveis.
    o modo sem localização.
 6. Clique em **Calcular estimativa**.
 7. Analise o resultado, os comparáveis e o mapa.
-8. Baixe o relatório Excel para auditoria ou documentação.
+8. Baixe o relatório sintético em PDF ou o relatório Excel para auditoria.
 
 ## Dados necessários
 
@@ -101,7 +103,8 @@ deve ser inteiro entre 1500 e o ano corrente.
 | Interface web | Streamlit 1.47+ |
 | Manipulação de dados | pandas e NumPy |
 | Leitura e escrita de Excel | openpyxl e xlrd |
-| Mapas e visualizações | Plotly / MapLibre |
+| Mapas e visualizações | Plotly / MapLibre e CARTO Positron |
+| Relatório PDF | ReportLab, Pillow e mapbox-vector-tile |
 | Geocodificação | eixo TM-POA, pyproj, RapidFuzz e Nominatim/geopy |
 | Testes | `unittest` da biblioteca padrão |
 
@@ -122,6 +125,10 @@ são baixados do Space `fschwartzer/Geocode` e verificados por SHA-256. O
 fallback Nominatim e o mapa-base também dependem de internet. Com coordenadas
 já fornecidas ou no modo sem localização, a estimativa não depende desses
 serviços.
+
+O mapa do PDF usa os tiles vetoriais oficiais do CARTO Positron e mantém a
+atribuição ao CARTO e ao OpenStreetMap. Se os tiles não puderem ser obtidos, o
+relatório é emitido com uma grade neutra e registra a contingência.
 
 ### Hardware
 
@@ -187,6 +194,7 @@ estimador_knn_siri/
 ├── estimador_knn_core_v6120.py    # cálculo e diagnósticos do KNN
 ├── estimador_knn_schema_v6120.py  # normalização do schema SIRI
 ├── geocodificador_porto_alegre.py # geocodificação pelo eixo do Space Geocode
+├── vera_pdf_report.py             # relatório PDF e mapa estático dos comparáveis
 ├── requirements.txt               # dependências de execução
 ├── tests/                         # testes automatizados
 ├── artifacts/calibration/         # evidências e resultados de calibração
@@ -207,6 +215,7 @@ repositório são:
 - `estimador_knn_core_v6120.py`;
 - `estimador_knn_schema_v6120.py`;
 - `geocodificador_porto_alegre.py`;
+- `vera_pdf_report.py`;
 - `requirements.txt`;
 - `.streamlit/config.toml`.
 
@@ -215,6 +224,12 @@ repositório são:
 O aplicativo é um instrumento de apoio à avaliação, não um substituto para a
 análise técnica. Os comparáveis, exclusões, pesos e diagnósticos devem ser
 revisados antes do uso operacional do resultado.
+
+No PDF, o "COD dos comparáveis" descreve a dispersão dos valores unitários
+ajustados da seleção final em torno da mediana. Ele não é o COD de um estudo de
+razões avaliação/preço fora da amostra. Da mesma forma, o score de confiança é
+um indicador heurístico da qualidade da estimativa, não um intervalo de
+confiança estatístico.
 
 Em avaliações em massa, valide o modelo em dados separados do ajuste e
 acompanhe, além dos erros preditivos, a mediana das razões, COD, PRD,
@@ -232,5 +247,5 @@ PRD, regressividade por faixa de valor e estabilidade espacial.
 
 - `VERSION.txt`: identificação da versão em produção;
 - `README_DEPLOY.txt`: lista mínima para publicação;
-- `docs/HISTORICO_VERSOES.md`: histórico funcional até a versão 1.18.0;
+- `docs/HISTORICO_VERSOES.md`: histórico funcional até a versão 1.19.0;
 - `artifacts/calibration/`: parâmetros e relatórios de calibrações anteriores.

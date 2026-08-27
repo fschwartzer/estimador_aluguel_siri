@@ -16,9 +16,13 @@ from geocodificador_porto_alegre import (
     load_street_axis_index,
     parse_street_and_number,
 )
+from vera_pdf_report import (
+    build_inference_report_pdf,
+    calculate_comparable_cod,
+)
 
 APP_NAME = "estimador_knn_siri"
-APP_EDITION = "LITE 1.18.0"
+APP_EDITION = "LITE 1.19.0"
 CORE_VERSION = "6.12.0"
 
 # Parâmetros internos: não ficam expostos ao usuário da edição LITE.
@@ -39,7 +43,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-MODULE_BUILD_ID = "estimador-knn-siri-lite-1.18.0-20260820"
+MODULE_BUILD_ID = "estimador-knn-siri-lite-1.19.0-20260826"
 CORE_MODULE_FILE = "estimador_knn_core_v6120.py"
 SCHEMA_MODULE_FILE = "estimador_knn_schema_v6120.py"
 
@@ -449,6 +453,38 @@ def percent_br(value: float, decimals: int = 1) -> str:
     if not np.isfinite(value):
         return "—"
     return f"{value * 100:.{decimals}f}%".replace(".", ",")
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def inference_report_pdf(
+    *,
+    estimated_unit_value: float,
+    estimated_total_value: float,
+    confidence_score: float,
+    neighbors: pd.DataFrame,
+    purpose: str,
+    area_regime_label: str,
+    target: dict[str, object],
+    latitude_column: str | None,
+    longitude_column: str | None,
+    type_column: str | None,
+    reference_area_column: str | None,
+) -> bytes:
+    """Gera e memoriza o PDF associado a uma estimativa concluída."""
+    return build_inference_report_pdf(
+        estimated_unit_value=estimated_unit_value,
+        estimated_total_value=estimated_total_value,
+        confidence_score=confidence_score,
+        neighbors=neighbors,
+        purpose=purpose,
+        area_regime_label=area_regime_label,
+        target=target,
+        latitude_column=latitude_column,
+        longitude_column=longitude_column,
+        type_column=type_column,
+        reference_area_column=reference_area_column,
+        logo_path=Path(__file__).resolve().parent / "static" / "vera_header.png",
+    )
 
 
 def step_header(number: int, title: str) -> None:
@@ -3842,6 +3878,11 @@ diagnostics = {
     ),
     "valor_total_estimado": estimate.estimated_total_value,
     "valor_unitario_estimado": estimate.estimated_unit_value,
+    "cod_comparaveis": calculate_comparable_cod(estimate.neighbors),
+    "definicao_cod_comparaveis": (
+        "desvio absoluto médio dos valores unitários ajustados em torno da "
+        "mediana; diagnóstico local, não COD de backtesting"
+    ),
     "area_referencia": run["reference_area_column"],
     "ano_construcao_avaliando": (
         run["target"].get("ano_construcao")
@@ -3895,13 +3936,64 @@ excel_bytes = dataframe_to_excel(
     all_excluded_data,
     preparation.flagged_data,
 )
-st.download_button(
-    "Baixar resultado em Excel",
-    data=excel_bytes,
-    file_name="resultado_estimador_knn_siri.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True,
-)
+
+pdf_bytes: bytes | None = None
+pdf_error: str | None = None
+try:
+    pdf_bytes = inference_report_pdf(
+        estimated_unit_value=estimate.estimated_unit_value,
+        estimated_total_value=estimate.estimated_total_value,
+        confidence_score=estimate.diagnostics["confidence_score"],
+        neighbors=estimate.neighbors,
+        purpose=run["finalidade_crawler_normalizada"],
+        area_regime_label=run["area_regime_label"],
+        target=run["target"],
+        latitude_column=(
+            mapping.latitude
+            if estimate.diagnostics.get("location_used", False)
+            else None
+        ),
+        longitude_column=(
+            mapping.longitude
+            if estimate.diagnostics.get("location_used", False)
+            else None
+        ),
+        type_column=mapping.tipo_informacao,
+        reference_area_column=run["reference_area_column"],
+    )
+except Exception as exc:
+    pdf_error = str(exc)
+
+download_excel, download_pdf = st.columns(2)
+with download_excel:
+    st.download_button(
+        "Baixar resultado em Excel",
+        data=excel_bytes,
+        file_name="resultado_estimador_knn_siri.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+with download_pdf:
+    if pdf_bytes is not None:
+        st.download_button(
+            "Baixar relatório de inferência em PDF",
+            data=pdf_bytes,
+            file_name="relatorio_inferencia_vera.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    else:
+        st.button(
+            "PDF indisponível nesta execução",
+            disabled=True,
+            use_container_width=True,
+        )
+
+if pdf_error:
+    st.warning(
+        "Não foi possível gerar o relatório PDF. O resultado em Excel continua "
+        f"disponível. Detalhe: {pdf_error}"
+    )
 
 with st.expander("Como o estimador trabalha"):
     st.markdown(

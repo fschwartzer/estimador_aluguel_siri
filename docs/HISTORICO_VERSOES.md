@@ -1,4 +1,16 @@
-# Histórico do estimador_knn_siri até a LITE 1.18.0
+# Histórico do estimador_knn_siri até a LITE 1.19.0
+
+## Relatório sintético de inferência - LITE 1.19.0
+
+- adiciona o PDF aos outputs da VERA, preservando a exportação Excel;
+- apresenta valor unitário, valor total, COD dos comparáveis, score de
+  confiança e a seleção final de comparáveis;
+- reproduz avaliando e comparáveis em mapa estático com fundo Claro - CARTO
+  Positron e atribuição ao OpenStreetMap/CARTO;
+- usa uma grade neutra como contingência quando os tiles externos não estão
+  disponíveis;
+- define o COD exibido como diagnóstico local da dispersão dos valores
+  unitários ajustados, sem apresentá-lo como COD de backtesting.
 
 > Documento arquivado em 14/08/2026. Algumas instruções de implantação abaixo
 > descrevem versões antigas e não devem ser usadas para publicar a versão

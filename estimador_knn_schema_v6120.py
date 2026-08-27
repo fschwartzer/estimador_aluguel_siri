@@ -9,7 +9,7 @@ import pandas as pd
 
 
 MODULE_API_VERSION = "6.12.0"
-MODULE_BUILD_ID = "estimador-knn-siri-lite-1.18.0-20260820"
+MODULE_BUILD_ID = "estimador-knn-siri-lite-1.19.0-20260826"
 
 
 DERIVED_AREA_LOTE = "__area_total_lote_efetiva"

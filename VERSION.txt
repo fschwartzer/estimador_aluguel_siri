@@ -1,6 +1,6 @@
-estimador_knn_siri LITE 1.18.0
-Área do terreno opcional em imóveis térreos, importação genérica e endereço.
-Localização por EPSG:4326/geocodificação ou KNN exclusivamente físico.
-Build: estimador-knn-siri-lite-1.18.0-20260820
+estimador_knn_siri LITE 1.19.0
+Relatório sintético de inferência em PDF com mapa CARTO Positron.
+Valor unitário, valor total, COD local, confiança e comparáveis.
+Build: estimador-knn-siri-lite-1.19.0-20260826
 Núcleo: estimador_knn_core_v6120.py / 6.12.0
 Schema: estimador_knn_schema_v6120.py / 6.12.0
