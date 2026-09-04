@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "source": "SIRI_pesquisa_aluguel-04.09.2026 11.09.10.xlsx",
+  "source_rows": 80996,
+  "valid_value_area_rows": 80613,
+  "valid_coordinate_rows": 70919,
+  "candidate_configurations": 48,
+  "market_rule": {
+    "kept_information_type": "Oferta Aluguel",
+    "offer_discount": 0.0,
+    "url_sale_rows_excluded": 21
+  },
+  "global": {
+    "profile": "aluguel_global_temporal_2026_09",
+    "min_k": 12,
+    "max_k": 25,
+    "min_effective_neighbors": 10.0,
+    "similarity_weight": 0.35,
+    "location_weight": 0.65,
+    "distance_power": 0.75,
+    "max_individual_weight": 0.25,
+    "robust_mad_threshold": 1.5
+  },
+  "purpose_overrides": {
+    "galpao / deposito": {
+      "profile": "aluguel_galpao_temporal_2026_09",
+      "similarity_weight": 0.65,
+      "location_weight": 0.35,
+      "tuning_mdape_relative_gain": 0.0422284767,
+      "confirmation_mdape_relative_gain": 0.0645279518
+    }
+  },
+  "unit_value_floors_brl_m2_month": {
+    "apartamento": 7.5,
+    "casa / residencia": 4.0,
+    "cobertura": 7.0,
+    "flat / apart-hotel": 10.0,
+    "galpao / deposito": 0.7,
+    "garagem / vaga": 3.0,
+    "garagem / vaga residencial": 2.0,
+    "garagem / vaga nao residencial": 6.0,
+    "gleba": 0.15,
+    "hotel": 0.4,
+    "imovel comercial": 3.0,
+    "imovel especial": 8.5,
+    "loja": 5.5,
+    "loja em galeria": 3.5,
+    "loja em shopping": 5.5,
+    "sala comercial": 4.0,
+    "terreno": 0.15
+  },
+  "temporal_confirmation": {
+    "purposes": 9,
+    "n": 623,
+    "mdape_macro": 0.2618517924,
+    "p90_ape_macro": 0.9172267916,
+    "median_ratio_absolute_deviation": 0.0810437863,
+    "cod_macro": 36.2157975127,
+    "prd_absolute_deviation": 0.2476315169
+  }
+}

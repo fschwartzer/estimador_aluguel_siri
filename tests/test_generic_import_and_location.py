@@ -42,7 +42,9 @@ class GenericImportTests(unittest.TestCase):
 
         self.assertFalse(info.siri_detected)
         self.assertTrue(
-            enriched[schema.DERIVED_TIPO_INFORMACAO].eq("Oferta").all()
+            enriched[schema.DERIVED_TIPO_INFORMACAO]
+            .eq("Oferta Aluguel")
+            .all()
         )
         self.assertTrue(
             enriched[schema.DERIVED_FINALIDADE_CRAWLER_NORMALIZADA]
@@ -227,7 +229,7 @@ class GenericImportTests(unittest.TestCase):
         )
 
         self.assertEqual(len(prepared.data), 7)
-        self.assertEqual(estimate.diagnostics["k_used"], 5)
+        self.assertEqual(estimate.diagnostics["k_used"], 7)
         self.assertFalse(estimate.diagnostics["location_used"])
         self.assertEqual(estimate.diagnostics["similarity_weight"], 1.0)
         self.assertGreater(estimate.estimated_total_value, 0)

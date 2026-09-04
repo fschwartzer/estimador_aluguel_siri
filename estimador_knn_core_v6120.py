@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 
 
-MODULE_API_VERSION = "6.12.0"
-MODULE_BUILD_ID = "estimador-knn-siri-lite-1.19.0-20260826"
+MODULE_API_VERSION = "6.13.0"
+MODULE_BUILD_ID = "estimador-aluguel-siri-1.0.0-20260904"
 
 
 MIN_CONSTRUCTION_YEAR = 1500
@@ -18,80 +18,36 @@ MAX_CONSTRUCTION_YEAR = date.today().year
 
 
 TIPO_ITBI = "guia itbi"
-TIPO_OFERTA = "oferta"
+TIPO_OFERTA = "oferta aluguel"
 TIPO_ALUGUEL = "oferta aluguel"
 
 
 CALIBRATED_GLOBAL_PARAMETERS: dict[str, float | int | str] = {
-    "profile": "global_calibrado_3_meses",
+    "profile": "aluguel_global_temporal_2026_09",
     "min_k": 12,
     "max_k": 25,
-    "min_effective_neighbors": 11.0,
-    "similarity_weight": 0.45,
-    "location_weight": 0.55,
-    "max_individual_weight": 0.30,
-    "distance_power": 0.35,
-    "robust_mad_threshold": 1.25,
+    "min_effective_neighbors": 10.0,
+    "similarity_weight": 0.35,
+    "location_weight": 0.65,
+    "max_individual_weight": 0.25,
+    "distance_power": 0.75,
+    "robust_mad_threshold": 1.50,
 }
 
 CALIBRATED_PURPOSE_PARAMETERS: dict[
     str,
     dict[str, float | int | str],
 ] = {
-    "casa / residencia": {
-        "profile": "especifico_casa_residencia",
-        "min_k": 5,
-        "max_k": 40,
-        "min_effective_neighbors": 5.0,
-        "similarity_weight": 0.85,
-        "location_weight": 0.15,
-        "max_individual_weight": 0.20,
-        "distance_power": 0.50,
-        "robust_mad_threshold": 2.00,
-    },
-    "sala comercial": {
-        "profile": "especifico_sala_comercial",
-        "min_k": 9,
-        "max_k": 20,
-        "min_effective_neighbors": 15.0,
-        "similarity_weight": 0.60,
-        "location_weight": 0.40,
+    "galpao / deposito": {
+        "profile": "aluguel_galpao_temporal_2026_09",
+        "min_k": 12,
+        "max_k": 25,
+        "min_effective_neighbors": 10.0,
+        "similarity_weight": 0.65,
+        "location_weight": 0.35,
         "max_individual_weight": 0.25,
-        "distance_power": 0.65,
-        "robust_mad_threshold": 2.50,
-    },
-    "garagem / vaga": {
-        "profile": "conservador_garagem_vaga_v1_12",
-        "min_k": 7,
-        "max_k": 30,
-        "min_effective_neighbors": 5.0,
-        "similarity_weight": 2.0 / 3.0,
-        "location_weight": 1.0 / 3.0,
-        "max_individual_weight": 0.30,
-        "distance_power": 1.00,
-        "robust_mad_threshold": 2.50,
-    },
-    "garagem / vaga residencial": {
-        "profile": "conservador_garagem_vaga_residencial_v1_12",
-        "min_k": 7,
-        "max_k": 30,
-        "min_effective_neighbors": 5.0,
-        "similarity_weight": 2.0 / 3.0,
-        "location_weight": 1.0 / 3.0,
-        "max_individual_weight": 0.30,
-        "distance_power": 1.00,
-        "robust_mad_threshold": 2.50,
-    },
-    "garagem / vaga nao residencial": {
-        "profile": "conservador_garagem_vaga_nao_residencial_v1_12",
-        "min_k": 7,
-        "max_k": 30,
-        "min_effective_neighbors": 5.0,
-        "similarity_weight": 2.0 / 3.0,
-        "location_weight": 1.0 / 3.0,
-        "max_individual_weight": 0.30,
-        "distance_power": 1.00,
-        "robust_mad_threshold": 2.50,
+        "distance_power": 0.75,
+        "robust_mad_threshold": 1.50,
     },
 }
 
@@ -403,12 +359,13 @@ def estimate_offer_discount(
     itbi_unit_values: Iterable[float],
     offer_unit_values: Iterable[float],
     cap: float = 0.20,
-    offers_only_discount: float = 0.10,
+    offers_only_discount: float = 0.00,
 ) -> tuple[float, dict[str, Any]]:
     """
     Define o fator de oferta por duas regras mutuamente exclusivas:
 
-    1. Quando existem apenas ofertas, aplica desconto convencional de 10%.
+    1. No estimador de aluguéis, ofertas são o próprio mercado observado e
+       não recebem desconto convencional.
     2. Quando há pelo menos dois dados de ITBI e dois de oferta, calcula:
 
            mediana(1 - VU_ITBI / VU_Oferta)
@@ -416,8 +373,8 @@ def estimate_offer_discount(
        em quantis pareados, usando ``cap`` somente como teto do desconto
        empiricamente calculado.
 
-    O desconto convencional de 10% não é produzido pela razão entre as
-    distribuições e, portanto, não utiliza o teto empírico de 20%.
+    A função permanece compatível com a assinatura histórica, mas a edição de
+    aluguéis usa ``offers_only_discount=0`` e não combina Guias ITBI.
     """
     itbi = _positive_values(itbi_unit_values)
     offers = _positive_values(offer_unit_values)
@@ -430,19 +387,17 @@ def estimate_offer_discount(
         "discount_was_capped": False,
     }
 
-    # Regra subsidiária: a amostra contém ofertas, mas nenhuma Guia ITBI.
+    # Regra da edição de aluguéis: preço pedido é a referência observada.
     if itbi.size == 0 and offers.size > 0:
         diagnostics.update(
             {
-                "discount_method": "fator convencional para amostra somente de ofertas",
-                "discount_source": "offers_only_fallback",
+                "discount_method": "sem desconto sobre ofertas de aluguel",
+                "discount_source": "rental_offers_unadjusted",
                 "raw_discount_median": np.nan,
                 "quantiles_used": 0,
                 "discount_warning": (
-                    f"A amostra contém somente ofertas. Foi aplicado o desconto "
-                    f"convencional de {offers_only_discount:.0%}; o teto de "
-                    f"{cap:.0%} é reservado ao desconto calculado pela razão "
-                    "entre Guias ITBI e ofertas."
+                    "As ofertas de aluguel foram mantidas pelo valor pedido; "
+                    "nenhum fator de desconto foi aplicado."
                 ),
             }
         )
@@ -471,8 +426,8 @@ def estimate_offer_discount(
                 "discount_warning": (
                     "Desconto igual a zero: para calcular a razão empírica são "
                     "necessários ao menos dois dados de Guia ITBI e dois de "
-                    "Oferta. O desconto convencional de 10% é aplicado somente "
-                    "quando não existe nenhuma Guia ITBI."
+                    "Oferta. Na edição de aluguéis, dados não classificados "
+                    "como oferta de locação são excluídos antes desta etapa."
                 ),
             }
         )
@@ -781,24 +736,23 @@ def deduplicate_offers(
 
 
 PURPOSE_UNIT_VALUE_FLOORS: dict[str, float] = {
-    'apartamento': 1200.00,
-    'cobertura': 900.00,
-    'flat / apart-hotel': 1200.00,
-    'casa / residencia': 800.00,
-    'loja': 700.00,
-    'loja em galeria': 1000.00,
-    'loja em shopping': 1200.00,
-    'sala comercial': 900.00,
-    'imovel comercial': 850.00,
-    'galpao / deposito': 650.00,
-    'terreno': 200.00,
-    'gleba': 20.00,
-    'construcao em area de gleba': 100.00,
-    'garagem / vaga': 150.00,
-    'garagem / vaga residencial': 200.00,
-    'garagem / vaga nao residencial': 150.00,
-    'hotel': 400.00,
-    'imovel especial': 400.00,
+    'apartamento': 7.50,
+    'cobertura': 7.00,
+    'flat / apart-hotel': 10.00,
+    'casa / residencia': 4.00,
+    'loja': 5.50,
+    'loja em galeria': 3.50,
+    'loja em shopping': 5.50,
+    'sala comercial': 4.00,
+    'imovel comercial': 3.00,
+    'galpao / deposito': 0.70,
+    'terreno': 0.15,
+    'gleba': 0.15,
+    'garagem / vaga': 3.00,
+    'garagem / vaga residencial': 2.00,
+    'garagem / vaga nao residencial': 6.00,
+    'hotel': 0.40,
+    'imovel especial': 8.50,
 }
 
 PREFILTER_SYMBOLIC_VALUE_MAX = 1.00
@@ -849,6 +803,21 @@ _PROPERTY_COUNT_COLUMN_NAMES = {
     "numero_de_imoveis",
     "imoveis_transmitidos",
 }
+
+_LISTING_URL_COLUMN_NAMES = {
+    "anuncio_website",
+    "url",
+    "url_anuncio",
+    "url_do_anuncio",
+    "link",
+    "link_anuncio",
+    "website",
+}
+
+_SALE_URL_PATTERN = (
+    r"(?:^|[/_-])venda(?:[/_?&#-]|$)"
+    r"|imovel(?:-|_)?a(?:-|_)?venda"
+)
 
 _NON_MARKET_NATURE_PATTERN = (
     r"\b(?:"
@@ -1018,6 +987,21 @@ def _safe_market_prefilter(
         "Valor unitário inválido ou não positivo",
     )
 
+    url_columns = _matching_columns(working, _LISTING_URL_COLUMN_NAMES)
+    sale_url_mask = pd.Series(False, index=working.index)
+    for column in url_columns:
+        sale_url_mask |= (
+            working[column]
+            .astype("string")
+            .str.casefold()
+            .str.contains(_SALE_URL_PATTERN, regex=True, na=False)
+        )
+    reasons = _append_reason(
+        reasons,
+        sale_url_mask,
+        "URL identifica oferta de venda, incompatível com aluguel",
+    )
+
     purpose_floor_name = floor_purpose or selected_purpose
     purpose_norm = normalize_text(purpose_floor_name)
     purpose_floor = float(
@@ -1120,10 +1104,10 @@ def _safe_market_prefilter(
     kept["_limite_inferior_vu_prefiltro"] = np.nan
     kept["_limite_superior_vu_prefiltro"] = np.nan
 
-    itbi_index = kept.index[kept["_tipo_norm"].eq(TIPO_ITBI)]
-    n_itbi = int(len(itbi_index))
+    market_index = kept.index[kept["_tipo_norm"].eq(TIPO_OFERTA)]
+    n_market = int(len(market_index))
 
-    statistical_method = "não aplicado: menos de 8 Guias ITBI"
+    statistical_method = "não aplicado: menos de 8 ofertas de aluguel"
     auto_exclusion_enabled = False
     robust_median_log = np.nan
     robust_mad_log = np.nan
@@ -1133,8 +1117,8 @@ def _safe_market_prefilter(
     extreme_mask = pd.Series(False, index=kept.index)
     attention_mask = pd.Series(False, index=kept.index)
 
-    if n_itbi >= PREFILTER_MIN_ITBI_FOR_DIAGNOSTIC:
-        log_values = kept.loc[itbi_index, "_log_valor_unitario"].astype(float)
+    if n_market >= PREFILTER_MIN_ITBI_FOR_DIAGNOSTIC:
+        log_values = kept.loc[market_index, "_log_valor_unitario"].astype(float)
         robust_median_log = float(np.median(log_values))
         absolute_deviation = np.abs(log_values - robust_median_log)
         robust_mad_log = float(np.median(absolute_deviation))
@@ -1145,7 +1129,7 @@ def _safe_market_prefilter(
                 * (log_values - robust_median_log)
                 / robust_mad_log
             )
-            kept.loc[itbi_index, "_escore_robusto_prefiltro"] = modified_z
+            kept.loc[market_index, "_escore_robusto_prefiltro"] = modified_z
 
             lower_log = (
                 robust_median_log
@@ -1197,10 +1181,10 @@ def _safe_market_prefilter(
                     "não aplicado: MAD e IQR iguais a zero"
                 )
 
-        kept.loc[itbi_index, "_limite_inferior_vu_prefiltro"] = lower_vu
-        kept.loc[itbi_index, "_limite_superior_vu_prefiltro"] = upper_vu
+        kept.loc[market_index, "_limite_inferior_vu_prefiltro"] = lower_vu
+        kept.loc[market_index, "_limite_superior_vu_prefiltro"] = upper_vu
         auto_exclusion_enabled = (
-            n_itbi >= PREFILTER_MIN_ITBI_FOR_AUTO_EXCLUSION
+            n_market >= PREFILTER_MIN_ITBI_FOR_AUTO_EXCLUSION
         )
 
     flagged_mask = attention_mask.copy()
@@ -1216,7 +1200,7 @@ def _safe_market_prefilter(
             (
                 "Valor unitário extremo identificado; não excluído "
                 "automaticamente porque a amostra possui menos de 15 "
-                "Guias ITBI"
+                "ofertas de aluguel"
             ),
             (
                 "Valor unitário na faixa de atenção robusta "
@@ -1294,7 +1278,14 @@ def _safe_market_prefilter(
         "prefilter_itbi_after": int(
             kept["_tipo_norm"].eq(TIPO_ITBI).sum()
         ),
-        "prefilter_itbi_for_robust_analysis": n_itbi,
+        "prefilter_offers_before": int(
+            working["_tipo_norm"].eq(TIPO_OFERTA).sum()
+        ),
+        "prefilter_offers_after": int(
+            kept["_tipo_norm"].eq(TIPO_OFERTA).sum()
+        ),
+        "prefilter_itbi_for_robust_analysis": 0,
+        "prefilter_offers_for_robust_analysis": n_market,
         "prefilter_auto_exclusion_enabled": bool(
             auto_exclusion_enabled
         ),
@@ -1310,6 +1301,8 @@ def _safe_market_prefilter(
         "prefilter_property_count_columns_detected": (
             property_count_columns
         ),
+        "prefilter_url_columns_detected": url_columns,
+        "prefilter_sale_url_excluded": int(sale_url_mask.sum()),
         "prefilter_exclusion_reasons": reason_counts,
         "purpose_unit_value_floor": purpose_floor,
         "purpose_floor_excluded": int(
@@ -1420,7 +1413,7 @@ def prepare_data(
         ].map(normalize_text).eq(normalize_text(selected_purpose))
         type_mask = source_data[
             mapping.tipo_informacao
-        ].map(normalize_text).isin([TIPO_ITBI, TIPO_OFERTA])
+        ].map(normalize_text).eq(TIPO_OFERTA)
         conflict_mask = (
             purpose_mask
             & type_mask
@@ -1594,9 +1587,7 @@ def prepare_data(
     data = data.loc[
         data["_finalidade_norm"].eq(normalize_text(selected_purpose))
     ].copy()
-    data = data.loc[
-        data["_tipo_norm"].isin([TIPO_ITBI, TIPO_OFERTA])
-    ].copy()
+    data = data.loc[data["_tipo_norm"].eq(TIPO_OFERTA)].copy()
 
     dedup_diag: dict[str, Any] = {
         "offer_deduplication_enabled": bool(remove_offer_duplicates),

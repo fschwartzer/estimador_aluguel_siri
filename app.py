@@ -16,34 +16,34 @@ from geocodificador_porto_alegre import (
     load_street_axis_index,
     parse_street_and_number,
 )
-from vera_pdf_report import (
+from siri_alugueis_pdf_report import (
     build_inference_report_pdf,
     calculate_comparable_cod,
 )
 
-APP_NAME = "estimador_knn_siri"
-APP_EDITION = "LITE 1.19.0"
-CORE_VERSION = "6.12.0"
+APP_NAME = "estimador_aluguel_siri"
+APP_EDITION = "1.0.0"
+CORE_VERSION = "6.13.0"
 
 # Parâmetros internos: não ficam expostos ao usuário da edição LITE.
 MIN_K = 12
 MAX_K = 25
-MIN_EFFECTIVE_NEIGHBORS = 11.0
-SIMILARITY_WEIGHT = 0.45
-DISTANCE_POWER = 0.35
+MIN_EFFECTIVE_NEIGHBORS = 10.0
+SIMILARITY_WEIGHT = 0.35
+DISTANCE_POWER = 0.75
 MAX_INDIVIDUAL_WEIGHT = 0.25
-ROBUST_MAD_THRESHOLD = 1.25
-DISCOUNT_CAP = 0.20
+ROBUST_MAD_THRESHOLD = 1.50
+DISCOUNT_CAP = 0.00
 
 
 st.set_page_config(
-    page_title="Estimador KNN SIRI",
-    page_icon="◆",
+    page_title="SIRI Aluguéis",
+    page_icon="🏠",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-MODULE_BUILD_ID = "estimador-knn-siri-lite-1.19.0-20260826"
+MODULE_BUILD_ID = "estimador-aluguel-siri-1.0.0-20260904"
 CORE_MODULE_FILE = "estimador_knn_core_v6120.py"
 SCHEMA_MODULE_FILE = "estimador_knn_schema_v6120.py"
 
@@ -247,20 +247,20 @@ friendly_column_name = _schema.friendly_column_name
 CUSTOM_CSS = """
 <style>
 :root {
-    --ink: #172033;
-    --muted: #667085;
-    --line: #E4E9F0;
-    --canvas: #F6F8FA;
-    --navy: #173B57;
-    --teal: #0E7C7B;
-    --soft-teal: #E9F5F4;
-    --soft-blue: #EEF4F8;
+    --ink: #2B2020;
+    --muted: #7A6161;
+    --line: #F0D6D6;
+    --canvas: #FFF7F7;
+    --navy: #7F1D1D;
+    --teal: #B91C1C;
+    --soft-teal: #FDE8E8;
+    --soft-blue: #FFF1F2;
     --amber: #A15C00;
     --red: #B42318;
 }
 .stApp {
     background:
-        radial-gradient(circle at 92% 4%, rgba(14,124,123,.09), transparent 23rem),
+        radial-gradient(circle at 92% 4%, rgba(185,28,28,.10), transparent 23rem),
         var(--canvas);
     color: var(--ink);
 }
@@ -275,7 +275,7 @@ CUSTOM_CSS = """
     padding: 2rem 2.2rem;
     border: 1px solid rgba(23,59,87,.12);
     border-radius: 24px;
-    background: linear-gradient(135deg, #FFFFFF 0%, #EDF7F6 100%);
+    background: linear-gradient(135deg, #FFFFFF 0%, #FFF1F2 100%);
     box-shadow: 0 18px 45px rgba(23,59,87,.075);
     margin-bottom: 1.25rem;
 }
@@ -294,7 +294,7 @@ CUSTOM_CSS = """
     padding: .32rem .68rem;
     border-radius: 999px;
     background: rgba(14,124,123,.10);
-    color: #096968;
+    color: #991B1B;
     font-size: .74rem;
     font-weight: 800;
     letter-spacing: .06em;
@@ -483,7 +483,7 @@ def inference_report_pdf(
         longitude_column=longitude_column,
         type_column=type_column,
         reference_area_column=reference_area_column,
-        logo_path=Path(__file__).resolve().parent / "static" / "vera_header.png",
+        logo_path=Path(__file__).resolve().parent / "static" / "siri_alugueis_header.png",
     )
 
 
@@ -1718,7 +1718,7 @@ def render_comparables_map(
         "Mapa-base",
         list(style_options),
         horizontal=True,
-        key="estimador_knn_siri_map_style",
+        key="estimador_aluguel_siri_map_style",
         help=(
             "Use 'Sem mapa-base' caso a rede ou o navegador bloqueie os "
             "tiles externos. A navegação e os pontos continuarão interativos."
@@ -1777,11 +1777,11 @@ def render_comparables_map(
             textposition="top center",
             textfont={
                 "size": 13,
-                "color": "#172033",
+                "color": "#2B2020",
             },
             marker={
                 "size": marker_sizes,
-                "color": "#0E7C7B",
+                "color": "#B91C1C",
                 "opacity": 0.86,
                 "symbol": "circle",
                 "allowoverlap": True,
@@ -1874,7 +1874,7 @@ def render_comparables_map(
                 "select2d",
             ],
         },
-        key="estimador_knn_siri_plotly_map",
+        key="estimador_aluguel_siri_plotly_map",
     )
 
     st.caption(
@@ -2030,11 +2030,11 @@ def dataframe_to_excel(
 
 hero_html = f"""
 <div class="hero">
-<span class="badge">VERA · {APP_EDITION}</span>
+<span class="badge">SIRI ALUGUÉIS · {APP_EDITION}</span>
 
 <img
-src="app/static/vera_header.png"
-alt="VERA — Valor Estimado por Referências Amostrais"
+src="app/static/siri_alugueis_header.png"
+alt="SIRI Aluguéis — Estimativa por referências de mercado"
 style="
 display:block;
 width:100%;
@@ -2045,7 +2045,7 @@ margin:0.8rem auto 0.4rem auto;
 />
 
 <p>
-Envie uma planilha do SIRI ou uma base de anúncios, informe as características do imóvel e obtenha uma estimativa com tratamento automático de ofertas, duplicidades, valores extremos e extrapolação.
+Envie uma planilha do SIRI ou uma base de anúncios de locação, informe as características do imóvel e obtenha uma estimativa mensal com tratamento automático de duplicidades, valores extremos e extrapolação.
 </p>
 </div>
 """
@@ -2131,7 +2131,7 @@ geocoding_context = ""
 if sample_coordinate_count < 2:
     st.warning(
         "A planilha não possui ao menos dois registros com coordenadas "
-        "válidas. A VERA pode geocodificar endereços reconhecidos ou executar "
+        "válidas. O SIRI Aluguéis pode geocodificar endereços reconhecidos ou executar "
         "o KNN apenas com as características físicas."
     )
     location_options = ["Ignorar localização"]
@@ -2143,7 +2143,7 @@ if sample_coordinate_count < 2:
         location_options,
         horizontal=True,
         help=(
-            "Em Porto Alegre, a VERA tenta primeiro a correspondência do "
+            "Em Porto Alegre, o SIRI Aluguéis tenta primeiro a correspondência do "
             "logradouro e a interpolação do número no eixo viário oficial. "
             "Depois usa geocodificação online como fallback."
         ),
@@ -2411,8 +2411,6 @@ purpose_mask = (
 )
 purpose_types = df.loc[purpose_mask, mapping.tipo_informacao].map(normalize_text)
 
-itbi_count = int(purpose_types.eq("guia itbi").sum())
-sale_offer_count = int(purpose_types.eq("oferta").sum())
 rental_count = int(
     purpose_types.str.contains(
         r"aluguel|locacao|arrendamento",
@@ -2420,23 +2418,23 @@ rental_count = int(
         na=False,
     ).sum()
 )
-usable_count = itbi_count + sale_offer_count
+non_rental_count = int(len(purpose_types) - rental_count)
+usable_count = rental_count
 
-s1, s2, s3, s4 = st.columns(4)
+s1, s2, s3 = st.columns(3)
 s1.metric("Dados utilizáveis", usable_count)
-s2.metric("Guias ITBI", itbi_count)
-s3.metric("Ofertas de venda", sale_offer_count)
-s4.metric(
-    "Aluguéis excluídos",
-    rental_count,
-    delta="não entram no KNN",
+s2.metric("Ofertas de aluguel", rental_count)
+s3.metric(
+    "Outros tipos ignorados",
+    non_rental_count,
+    delta="fora do mercado de locação",
     delta_color="off",
 )
 
 st.caption(
-    "Somente Guias ITBI e registros classificados como Oferta de venda "
-    "seguem para o cálculo. Ofertas de aluguel são excluídas antes da "
-    "deduplicação, do fator de oferta e da seleção dos comparáveis."
+    "Somente ofertas de aluguel da finalidade escolhida seguem para a "
+    "deduplicação, os controles robustos e a seleção dos comparáveis. "
+    "O preço pedido é preservado, sem fator de desconto."
 )
 
 selected_rows_mask = purpose_mask
@@ -2484,7 +2482,7 @@ clean_usable_count = int(
         )
         & df[mapping.tipo_informacao]
         .map(normalize_text)
-        .isin(["guia itbi", "oferta"])
+        .eq("oferta aluguel")
     ).sum()
 )
 st.caption(
@@ -2629,7 +2627,7 @@ with st.form("lite_property_form"):
                     purpose_mask
                     & df[mapping.tipo_informacao]
                     .map(normalize_text)
-                    .isin(["guia itbi", "oferta"])
+                    .eq("oferta aluguel")
                     & np.isfinite(land_area_values)
                     & land_area_values.gt(0)
                 )
@@ -3082,17 +3080,13 @@ if calculate:
             }
         )
 
-        rental_rows_after_filter = int(
-            preparation.data["_tipo_norm"].str.contains(
-                r"aluguel|locacao|arrendamento",
-                regex=True,
-                na=False,
-            ).sum()
+        non_rental_rows_after_filter = int(
+            (~preparation.data["_tipo_norm"].eq("oferta aluguel")).sum()
         )
-        if rental_rows_after_filter:
+        if non_rental_rows_after_filter:
             raise RuntimeError(
-                "Falha de integridade: foram encontrados registros de aluguel "
-                "após o filtro da amostra."
+                "Falha de integridade: foram encontrados registros que não são "
+                "ofertas de aluguel após o filtro da amostra."
             )
 
         estimate = estimate_knn(
@@ -3211,9 +3205,9 @@ m3.metric(
     delta_color="off",
 )
 m4.metric(
-    "Desconto das ofertas",
-    percent_br(preparation.discount),
-    delta="limitado a 20%",
+    "Base de mercado",
+    "Ofertas de aluguel",
+    delta="sem desconto no preço pedido",
     delta_color="off",
 )
 
@@ -3332,39 +3326,17 @@ elif conflict_rows_available:
         "conflito tipológico, pois a amostra sem conflito foi suficiente."
     )
 
-raw_discount = preparation.diagnostics.get(
-    "raw_discount_median",
-    np.nan,
-)
-discount_source = preparation.diagnostics.get(
-    "discount_source",
-    "empirical_ratio",
-)
-n_itbi_effective = int(preparation.diagnostics.get("n_itbi", 0))
 n_offer_effective = int(preparation.diagnostics.get("n_offer", 0))
 
-discount_alert = classify_discount_alert(
-    preparation.discount,
-    raw_discount,
-    discount_source,
-)
-sample_alert = classify_sample_composition(
-    n_itbi_effective,
-    n_offer_effective,
-    discount_source,
-)
-
 with st.container(border=True):
-    st.markdown("#### Qualidade do fator de oferta")
-    qa1, qa2 = st.columns(2)
-    with qa1:
-        render_quality_alert(discount_alert)
-    with qa2:
-        render_quality_alert(sample_alert)
+    st.markdown("#### Qualidade da amostra de locação")
+    st.success(
+        f"Foram mantidas **{n_offer_effective}** ofertas de aluguel após os "
+        "controles de finalidade, duplicidade, área e valor unitário."
+    )
     st.caption(
-        "Regra aplicada: somente ofertas recebem desconto convencional de 10%. "
-        "Quando existem Guias ITBI e ofertas suficientes, utiliza-se a mediana "
-        "dos quantis pareados, com 20% apenas como freio do resultado empírico."
+        "O preço pedido mensal é usado diretamente. Não há mistura com Guias "
+        "ITBI, ofertas de venda ou fator convencional de desconto."
     )
 
 tabs = st.tabs(
@@ -3426,11 +3398,11 @@ with tabs[0]:
             for reason in risk_reasons:
                 st.warning(reason)
 
-    prefilter_itbi_before = int(
-        preparation.diagnostics.get("prefilter_itbi_before", 0)
+    prefilter_offers_before = int(
+        preparation.diagnostics.get("prefilter_offers_before", 0)
     )
-    prefilter_itbi_after = int(
-        preparation.diagnostics.get("prefilter_itbi_after", 0)
+    prefilter_offers_after = int(
+        preparation.diagnostics.get("prefilter_offers_after", 0)
     )
     prefilter_deterministic = int(
         preparation.diagnostics.get(
@@ -3458,7 +3430,7 @@ with tabs[0]:
     with st.container(border=True):
         st.markdown("#### Controle prévio da amostra")
         pf1, pf2, pf3, pf4 = st.columns(4)
-        pf1.metric("Guias ITBI recebidas", prefilter_itbi_before)
+        pf1.metric("Ofertas recebidas", prefilter_offers_before)
         pf2.metric(
             "Dados excluídos",
             total_excluded,
@@ -3470,7 +3442,7 @@ with tabs[0]:
             delta_color="off",
         )
         pf3.metric("Dados em alerta", prefilter_flagged)
-        pf4.metric("Guias ITBI utilizadas", prefilter_itbi_after)
+        pf4.metric("Ofertas utilizadas", prefilter_offers_after)
 
         purpose_floor = float(
             preparation.diagnostics.get(
@@ -3706,13 +3678,6 @@ with tabs[0]:
         f"**{fallback_duplicates}** por identificadores de anúncio."
     )
 
-    discount_warning = preparation.diagnostics.get("discount_warning")
-    if (
-        discount_warning
-        and discount_source not in {"offers_only_fallback", "empirical_ratio"}
-    ):
-        st.warning(discount_warning)
-
 with tabs[1]:
     neighbors = estimate.neighbors.copy()
 
@@ -3920,11 +3885,8 @@ diagnostics = {
             0,
         )
     ),
-    "faixa_alerta_desconto": discount_alert["band"],
-    "classificacao_desconto": discount_alert["title"],
-    "faixa_composicao_amostral": sample_alert["band"],
-    "classificacao_composicao_amostral": sample_alert["title"],
-    "guias_itbi_efetivas": n_itbi_effective,
+    "regra_ajuste_ofertas": "sem desconto; valor mensal anunciado",
+    "composicao_amostral": "somente ofertas de aluguel",
     "ofertas_efetivas": n_offer_effective,
     **preparation.diagnostics,
     **estimate.diagnostics,
@@ -3969,7 +3931,7 @@ with download_excel:
     st.download_button(
         "Baixar resultado em Excel",
         data=excel_bytes,
-        file_name="resultado_estimador_knn_siri.xlsx",
+        file_name="resultado_siri_alugueis.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
@@ -4005,23 +3967,20 @@ with st.expander("Como o estimador trabalha"):
 - reconhece cabeçalhos usuais de planilhas SIRI e de bases de anúncios;
 - pode geocodificar endereços ou renormalizar o peso físico para 100% quando a localização não estiver disponível;
 - no modo automático, troca para a base alternativa somente quando a preferencial não atinge o K inicial;
-- exclui ofertas de aluguel;
+- mantém exclusivamente ofertas de aluguel da finalidade escolhida;
 - normaliza todos os registros para uma finalidade crawler única e seleciona os comparáveis por essa taxonomia;
-- escolhe automaticamente parâmetros KNN calibrados nos dados dos últimos três meses, com perfis específicos apenas quando validados;
+- escolhe automaticamente parâmetros KNN calibrados em separação temporal, com perfil específico somente quando confirmado fora do período de ajuste;
 - exclui dados com conflito tipológico enquanto a amostra limpa for suficiente e os admite somente como contingência;
 - remove primeiro duplicidades por tipo, inscrição SIAT e valor, mantendo a coleta mais recente;
 - usa identificadores genuínos do anúncio apenas como fallback;
-- exclui valores inválidos ou simbólicos e transmissões não mercadológicas identificáveis;
-- analisa o ln(valor unitário) das Guias ITBI por escore Z modificado;
-- exclui automaticamente extremos robustos somente com 15 ou mais Guias ITBI;
-- mantém apenas em alerta os extremos identificados em amostras de 8 a 14 Guias;
+- exclui valores inválidos, simbólicos ou abaixo do piso de aluguel calibrado por finalidade;
+- analisa o ln(aluguel unitário) das ofertas por escore Z modificado;
+- exclui automaticamente extremos robustos somente com 15 ou mais ofertas;
+- mantém apenas em alerta os extremos identificados em amostras de 8 a 14 ofertas;
 - aplica filtro local adaptativo com mediana ponderada pela proximidade, critérios robustos e detecção de ruptura entre grupos de valor;
 - exporta os dados excluídos e alertados para auditoria;
-- aplica fator 0,90 quando a amostra contém somente ofertas;
-- havendo transações e ofertas suficientes, calcula a mediana da razão observada;
-- usa 20% apenas como freio do desconto empírico;
-- alerta quando o desconto é moderado, relevante, elevado ou supera o freio;
-- informa se a quantidade de Guias ITBI e Ofertas é insuficiente, restrita ou adequada;
+- usa diretamente o preço pedido mensal das ofertas, sem desconto convencional;
+- informa quando a quantidade de ofertas é insuficiente ou exige cautela;
 - escolhe automaticamente o número de comparáveis;
 - impede que um único imóvel concentre peso excessivo;
 - reduz a influência de valores unitários extremos;

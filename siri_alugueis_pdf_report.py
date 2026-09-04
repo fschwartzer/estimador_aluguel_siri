@@ -31,11 +31,11 @@ from reportlab.platypus import (
 )
 
 
-INK = colors.HexColor("#172033")
-MUTED = colors.HexColor("#667085")
+INK = colors.HexColor("#2B2020")
+MUTED = colors.HexColor("#7A6161")
 LINE = colors.HexColor("#DDE4EA")
-NAVY = colors.HexColor("#173B57")
-TEAL = colors.HexColor("#0E7C7B")
+NAVY = colors.HexColor("#7F1D1D")
+TEAL = colors.HexColor("#B91C1C")
 SOFT_TEAL = colors.HexColor("#E9F5F4")
 SOFT_BLUE = colors.HexColor("#EEF4F8")
 RED = colors.HexColor("#B42318")
@@ -230,7 +230,7 @@ def _fetch_vector_tile(
         x=wrapped_x,
         y=tile_y,
     )
-    request = Request(url, headers={"User-Agent": "VERA/1.19 PDF report"})
+    request = Request(url, headers={"User-Agent": "SIRI-Alugueis/1.0 PDF report"})
     try:
         with urlopen(request, timeout=4.0) as response:
             tile = response.read()
@@ -789,7 +789,7 @@ def _page_footer(canvas: Any, document: BaseDocTemplate) -> None:
     canvas.line(18 * mm, 13 * mm, A4[0] - 18 * mm, 13 * mm)
     canvas.setFont("Helvetica", 6.5)
     canvas.setFillColor(MUTED)
-    canvas.drawString(18 * mm, 8.5 * mm, "VERA · Relatório sintético de inferência")
+    canvas.drawString(18 * mm, 8.5 * mm, "SIRI Aluguéis · Relatório sintético de estimativa")
     canvas.drawRightString(
         A4[0] - 18 * mm,
         8.5 * mm,
@@ -815,7 +815,7 @@ def build_inference_report_pdf(
     generated_at: datetime | None = None,
     fetch_map_tiles: bool = True,
 ) -> bytes:
-    """Gera o relatório sintético de inferência da VERA em memória."""
+    """Gera o relatório sintético do SIRI Aluguéis em memória."""
     if neighbors.empty:
         raise ValueError("O relatório exige ao menos um comparável.")
 
@@ -836,8 +836,8 @@ def build_inference_report_pdf(
         rightMargin=18 * mm,
         topMargin=15 * mm,
         bottomMargin=18 * mm,
-        title="VERA - Relatório sintético de inferência",
-        author="VERA",
+        title="SIRI Aluguéis - Relatório sintético de estimativa",
+        author="SIRI Aluguéis",
         subject="Estimativa imobiliária por referências amostrais",
     )
     frame = Frame(
@@ -861,7 +861,7 @@ def build_inference_report_pdf(
     else:
         header_cells.append(
             Paragraph(
-                "<b>VERA</b><br/><font size='7'>"
+                "<b>SIRI ALUGUÉIS</b><br/><font size='7'>"
                 "Valor Estimado por Referências Amostrais</font>",
                 styles["body"],
             )

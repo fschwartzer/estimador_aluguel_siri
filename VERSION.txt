@@ -1,6 +1,5 @@
-estimador_knn_siri LITE 1.19.0
-Relatório sintético de inferência em PDF com mapa CARTO Positron.
-Valor unitário, valor total, COD local, confiança e comparáveis.
-Build: estimador-knn-siri-lite-1.19.0-20260826
-Núcleo: estimador_knn_core_v6120.py / 6.12.0
-Schema: estimador_knn_schema_v6120.py / 6.12.0
+SIRI Aluguéis 1.0.0
+Estimador KNN de aluguel baseado exclusivamente em ofertas de locação.
+Build: estimador-aluguel-siri-1.0.0-20260904
+Núcleo: estimador_knn_core_v6120.py / 6.13.0
+Schema: estimador_knn_schema_v6120.py / 6.13.0

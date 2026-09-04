@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from vera_pdf_report import (
+from siri_alugueis_pdf_report import (
     MAP_HORIZONTAL_PADDING_PX,
     MAP_HEIGHT_PX,
     MAP_VERTICAL_PADDING_PX,
@@ -88,8 +88,8 @@ class PdfReportTests(unittest.TestCase):
             np.allclose(report["valor_unitario_robusto"], [4_800.0, 6_000.0, 4_000.0])
         )
 
-    @patch("vera_pdf_report._render_vector_tile")
-    @patch("vera_pdf_report._fetch_vector_tile")
+    @patch("siri_alugueis_pdf_report._render_vector_tile")
+    @patch("siri_alugueis_pdf_report._fetch_vector_tile")
     def test_close_comparables_use_overzoomed_vector_tiles(
         self,
         fetch_tile,
@@ -153,7 +153,7 @@ class PdfReportTests(unittest.TestCase):
             longitude_column="lon",
             type_column="tipo",
             reference_area_column="area",
-            logo_path=ROOT / "static" / "vera_header.png",
+            logo_path=ROOT / "static" / "siri_alugueis_header.png",
             generated_at=datetime(2026, 8, 26, 15, 0, tzinfo=timezone.utc),
             fetch_map_tiles=False,
         )

@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 
 
-MODULE_API_VERSION = "6.12.0"
-MODULE_BUILD_ID = "estimador-knn-siri-lite-1.19.0-20260826"
+MODULE_API_VERSION = "6.13.0"
+MODULE_BUILD_ID = "estimador-aluguel-siri-1.0.0-20260904"
 
 
 DERIVED_AREA_LOTE = "__area_total_lote_efetiva"
@@ -904,12 +904,12 @@ def enrich_known_schemas(df: pd.DataFrame) -> tuple[pd.DataFrame, SchemaInfo]:
         if not siri_detected:
             information_type = information_type.mask(
                 information_type.fillna("").str.strip().eq(""),
-                "Oferta",
+                "Oferta Aluguel",
             )
     else:
         # Bases de raspagem contêm anúncios, não Guias ITBI. A hipótese fica
         # materializada em uma coluna derivada e nas notas de auditoria.
-        information_type = pd.Series("Oferta", index=data.index, dtype="string")
+        information_type = pd.Series("Oferta Aluguel", index=data.index, dtype="string")
 
     data[DERIVED_TIPO_INFORMACAO] = information_type
     added.append(DERIVED_TIPO_INFORMACAO)
@@ -922,7 +922,7 @@ def enrich_known_schemas(df: pd.DataFrame) -> tuple[pd.DataFrame, SchemaInfo]:
     else:
         notes.append(
             "Tipo da informação ausente: os registros foram tratados como "
-            "ofertas, hipótese compatível com bases de anúncios raspados."
+            "ofertas de aluguel, hipótese compatível com bases de anúncios de locação."
         )
 
 

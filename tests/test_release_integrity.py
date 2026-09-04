@@ -27,8 +27,8 @@ class ReleaseIntegrityTests(unittest.TestCase):
     def test_app_loads_the_published_core_and_schema(self) -> None:
         constants = module_constants(ROOT / "app.py")
 
-        self.assertEqual(constants["APP_EDITION"], "LITE 1.19.0")
-        self.assertEqual(constants["CORE_VERSION"], "6.12.0")
+        self.assertEqual(constants["APP_EDITION"], "1.0.0")
+        self.assertEqual(constants["CORE_VERSION"], "6.13.0")
         self.assertEqual(
             constants["CORE_MODULE_FILE"],
             "estimador_knn_core_v6120.py",
@@ -55,7 +55,7 @@ class ReleaseIntegrityTests(unittest.TestCase):
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
         for dependency in ("reportlab", "pillow", "mapbox-vector-tile"):
             self.assertIn(dependency, requirements.casefold())
-        self.assertTrue((ROOT / "vera_pdf_report.py").is_file())
+        self.assertTrue((ROOT / "siri_alugueis_pdf_report.py").is_file())
 
     def test_app_maps_siat_year_to_the_new_mapping_field(self) -> None:
         tree = ast.parse((ROOT / "app.py").read_text(encoding="utf-8"))
