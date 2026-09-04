@@ -13,7 +13,7 @@ Criar um aplicativo independente, derivado de `estimador_knn_siri`, para estimar
 - [x] Substituir identidade VERA por SIRI Aluguéis e aplicar paleta vermelha.
 - [x] Atualizar documentação e testes.
 - [x] Executar testes, verificações estáticas e validação funcional.
-- [ ] Criar e publicar um novo repositório no GitHub.
+- [x] Criar e publicar um novo repositório no GitHub.
 
 ## Critérios de aceitação
 
