@@ -43,8 +43,13 @@ WHITE = colors.white
 
 MAP_WIDTH_PX = 1_400
 MAP_HEIGHT_PX = 660
+MAP_HORIZONTAL_PADDING_PX = 100
+MAP_VERTICAL_PADDING_PX = 80
 TILE_SIZE_PX = 256
 MAX_TILE_REQUESTS = 48
+MAX_VECTOR_TILE_ZOOM = 14
+MIN_MAP_ZOOM = 3.0
+MAX_MAP_ZOOM = 20.0
 CARTO_ATTRIBUTION = "© OpenStreetMap contributors · © CARTO"
 CARTO_VECTOR_TILE_URL = (
     "https://tiles-{subdomain}.basemaps.cartocdn.com/"
@@ -149,6 +154,9 @@ def prepare_report_comparables(
     report["valor_unitario"] = pd.to_numeric(
         _first_series(neighbors, "_valor_unitario_ajustado"), errors="coerce"
     )
+    report["valor_unitario_robusto"] = pd.to_numeric(
+        _first_series(neighbors, "_valor_unitario_robusto"), errors="coerce"
+    )
     report["peso"] = pd.to_numeric(
         _first_series(neighbors, "_peso_knn"), errors="coerce"
     )
@@ -170,7 +178,7 @@ def prepare_report_comparables(
     return report
 
 
-def _mercator_xy(latitude: float, longitude: float, zoom: int) -> tuple[float, float]:
+def _mercator_xy(latitude: float, longitude: float, zoom: float) -> tuple[float, float]:
     latitude = float(np.clip(latitude, -85.05112878, 85.05112878))
     scale = TILE_SIZE_PX * (2**zoom)
     x = (longitude + 180.0) / 360.0 * scale
@@ -183,16 +191,27 @@ def _mercator_xy(latitude: float, longitude: float, zoom: int) -> tuple[float, f
     return x, y
 
 
-def _choose_zoom(points: list[tuple[float, float]]) -> int:
+def _choose_zoom(points: list[tuple[float, float]]) -> float:
+    """Enquadra os pontos periféricos com uma margem fixa para os marcadores."""
     if len(points) <= 1:
-        return 16
-    for zoom in range(17, 2, -1):
-        pixels = [_mercator_xy(lat, lon, zoom) for lat, lon in points]
-        span_x = max(value[0] for value in pixels) - min(value[0] for value in pixels)
-        span_y = max(value[1] for value in pixels) - min(value[1] for value in pixels)
-        if span_x <= MAP_WIDTH_PX * 0.76 and span_y <= MAP_HEIGHT_PX * 0.66:
-            return zoom
-    return 3
+        return MAX_MAP_ZOOM
+
+    # No zoom zero, dobrar o zoom dobra exatamente os vãos em pixels. Isso
+    # permite calcular um zoom contínuo que usa a área disponível sem excluir
+    # os pontos extremos por arredondamento para um nível inteiro.
+    pixels = [_mercator_xy(lat, lon, 0.0) for lat, lon in points]
+    span_x = max(value[0] for value in pixels) - min(value[0] for value in pixels)
+    span_y = max(value[1] for value in pixels) - min(value[1] for value in pixels)
+    usable_width = MAP_WIDTH_PX - 2 * MAP_HORIZONTAL_PADDING_PX
+    usable_height = MAP_HEIGHT_PX - 2 * MAP_VERTICAL_PADDING_PX
+    zoom_limits = []
+    if span_x > 0:
+        zoom_limits.append(math.log2(usable_width / span_x))
+    if span_y > 0:
+        zoom_limits.append(math.log2(usable_height / span_y))
+    if not zoom_limits:
+        return MAX_MAP_ZOOM
+    return float(np.clip(min(zoom_limits), MIN_MAP_ZOOM, MAX_MAP_ZOOM))
 
 
 def _fetch_vector_tile(
@@ -239,10 +258,11 @@ def _tile_point(
     extent: int,
     destination_x: float,
     destination_y: float,
+    tile_size_px: float = TILE_SIZE_PX,
 ) -> tuple[float, float]:
     return (
-        destination_x + float(coordinate[0]) / extent * TILE_SIZE_PX,
-        destination_y + float(coordinate[1]) / extent * TILE_SIZE_PX,
+        destination_x + float(coordinate[0]) / extent * tile_size_px,
+        destination_y + float(coordinate[1]) / extent * tile_size_px,
     )
 
 
@@ -254,6 +274,7 @@ def _draw_polygon_geometry(
     destination_x: float,
     destination_y: float,
     fill: str,
+    tile_size_px: float = TILE_SIZE_PX,
 ) -> None:
     coordinates = geometry.get("coordinates", [])
     polygons = (
@@ -271,6 +292,7 @@ def _draw_polygon_geometry(
                     extent=extent,
                     destination_x=destination_x,
                     destination_y=destination_y,
+                    tile_size_px=tile_size_px,
                 )
                 for coordinate in ring
             ]
@@ -290,6 +312,7 @@ def _draw_line_geometry(
     destination_y: float,
     fill: str,
     width: int,
+    tile_size_px: float = TILE_SIZE_PX,
 ) -> None:
     coordinates = geometry.get("coordinates", [])
     lines = (
@@ -306,6 +329,7 @@ def _draw_line_geometry(
                 extent=extent,
                 destination_x=destination_x,
                 destination_y=destination_y,
+                tile_size_px=tile_size_px,
             )
             for coordinate in line
         ]
@@ -331,6 +355,7 @@ def _render_vector_tile(
     *,
     destination_x: float,
     destination_y: float,
+    tile_size_px: float = TILE_SIZE_PX,
 ) -> None:
     import mapbox_vector_tile
 
@@ -358,7 +383,13 @@ def _render_vector_tile(
                 destination_x=destination_x,
                 destination_y=destination_y,
                 fill=fill,
+                tile_size_px=tile_size_px,
             )
+
+    # O tile-pai é ampliado geometricamente acima do zoom vetorial máximo,
+    # mas a espessura das vias deve continuar em pixels de tela. Escalá-la
+    # junto com o tile transformaria ruas em faixas excessivamente largas.
+    stroke_scale = 1.0
 
     boundary_layer = decoded.get("boundary", {})
     boundary_extent = int(boundary_layer.get("extent", 4096))
@@ -370,7 +401,8 @@ def _render_vector_tile(
             destination_x=destination_x,
             destination_y=destination_y,
             fill="#E1C5C7",
-            width=1,
+            width=round(stroke_scale),
+            tile_size_px=tile_size_px,
         )
 
     road_layer = decoded.get("transportation", {})
@@ -394,6 +426,7 @@ def _render_vector_tile(
                     destination_x=destination_x,
                     destination_y=destination_y,
                     fill=fill,
+                    tile_size_px=tile_size_px,
                 )
             else:
                 _draw_line_geometry(
@@ -403,7 +436,8 @@ def _render_vector_tile(
                     destination_x=destination_x,
                     destination_y=destination_y,
                     fill=fill,
-                    width=width,
+                    width=round(width * stroke_scale),
+                    tile_size_px=tile_size_px,
                 )
 
     waterway_layer = decoded.get("waterway", {})
@@ -416,7 +450,8 @@ def _render_vector_tile(
             destination_x=destination_x,
             destination_y=destination_y,
             fill="#D1DBDF",
-            width=2,
+            width=round(2 * stroke_scale),
+            tile_size_px=tile_size_px,
         )
 
 
@@ -471,17 +506,27 @@ def render_comparables_map_image(
     points = [(target_latitude, target_longitude)] + list(
         zip(mapped["latitude"].astype(float), mapped["longitude"].astype(float))
     )
-    # O tileset vetorial oficial do CARTO é publicado até o zoom 14.
-    zoom = min(_choose_zoom(points), 14)
-    global_pixels = [_mercator_xy(lat, lon, zoom) for lat, lon in points]
+    display_zoom = _choose_zoom(points)
+    # O tileset vetorial oficial do CARTO é publicado até o zoom 14. Em níveis
+    # maiores, o tile-pai é ampliado como vetor para preservar o enquadramento.
+    tile_zoom = min(math.floor(display_zoom), MAX_VECTOR_TILE_ZOOM)
+    tile_scale = 2 ** (display_zoom - tile_zoom)
+    rendered_tile_size = TILE_SIZE_PX * tile_scale
+    global_pixels = [
+        _mercator_xy(lat, lon, display_zoom) for lat, lon in points
+    ]
     center_x = (min(x for x, _ in global_pixels) + max(x for x, _ in global_pixels)) / 2
     center_y = (min(y for _, y in global_pixels) + max(y for _, y in global_pixels)) / 2
     viewport_left = center_x - MAP_WIDTH_PX / 2
     viewport_top = center_y - MAP_HEIGHT_PX / 2
-    first_tile_x = math.floor(viewport_left / TILE_SIZE_PX)
-    last_tile_x = math.floor((viewport_left + MAP_WIDTH_PX) / TILE_SIZE_PX)
-    first_tile_y = math.floor(viewport_top / TILE_SIZE_PX)
-    last_tile_y = math.floor((viewport_top + MAP_HEIGHT_PX) / TILE_SIZE_PX)
+    first_tile_x = math.floor(viewport_left / rendered_tile_size)
+    last_tile_x = math.floor(
+        (viewport_left + MAP_WIDTH_PX) / rendered_tile_size
+    )
+    first_tile_y = math.floor(viewport_top / rendered_tile_size)
+    last_tile_y = math.floor(
+        (viewport_top + MAP_HEIGHT_PX) / rendered_tile_size
+    )
     tile_coordinates = [
         (x, y)
         for x in range(first_tile_x, last_tile_x + 1)
@@ -493,21 +538,26 @@ def render_comparables_map_image(
     if fetch_tiles and len(tile_coordinates) <= MAX_TILE_REQUESTS:
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = [
-                executor.submit(_fetch_vector_tile, zoom, x, y)
+                executor.submit(_fetch_vector_tile, tile_zoom, x, y)
                 for x, y in tile_coordinates
             ]
             for future in as_completed(futures):
                 tile_x, tile_y, tile_bytes = future.result()
                 if tile_bytes is None:
                     continue
-                destination_x = int(tile_x * TILE_SIZE_PX - viewport_left)
-                destination_y = int(tile_y * TILE_SIZE_PX - viewport_top)
+                destination_x = int(
+                    tile_x * rendered_tile_size - viewport_left
+                )
+                destination_y = int(
+                    tile_y * rendered_tile_size - viewport_top
+                )
                 try:
                     _render_vector_tile(
                         image,
                         tile_bytes,
                         destination_x=destination_x,
                         destination_y=destination_y,
+                        tile_size_px=rendered_tile_size,
                     )
                     loaded_tiles += 1
                 except Exception:
@@ -521,7 +571,9 @@ def render_comparables_map_image(
     target_x, target_y = global_pixels[0]
     target_xy = (target_x - viewport_left, target_y - viewport_top)
     for row in mapped.itertuples(index=False):
-        comp_x, comp_y = _mercator_xy(float(row.latitude), float(row.longitude), zoom)
+        comp_x, comp_y = _mercator_xy(
+            float(row.latitude), float(row.longitude), display_zoom
+        )
         comp_xy = (comp_x - viewport_left, comp_y - viewport_top)
         draw.line((*target_xy, *comp_xy), fill=(23, 59, 87, 70), width=2)
 
@@ -530,7 +582,9 @@ def render_comparables_map_image(
     minimum_weight = float(weights.min()) if not weights.empty else 0.0
     maximum_weight = float(weights.max()) if not weights.empty else 0.0
     for row in mapped.itertuples(index=False):
-        comp_x, comp_y = _mercator_xy(float(row.latitude), float(row.longitude), zoom)
+        comp_x, comp_y = _mercator_xy(
+            float(row.latitude), float(row.longitude), display_zoom
+        )
         px = comp_x - viewport_left
         py = comp_y - viewport_top
         if maximum_weight > minimum_weight:
@@ -930,6 +984,7 @@ def build_inference_report_pdf(
             Paragraph("Tipo", styles["table_header"]),
             Paragraph("Área", styles["table_header"]),
             Paragraph("VU ajustado", styles["table_header"]),
+            Paragraph("VU robusto", styles["table_header"]),
             Paragraph("Peso", styles["table_header"]),
             Paragraph("Distância", styles["table_header"]),
             Paragraph("Linha", styles["table_header"]),
@@ -943,6 +998,9 @@ def build_inference_report_pdf(
                 Paragraph(_paragraph_text(row.tipo), styles["table_cell"]),
                 Paragraph(_measurement_br(row.area, "m²"), styles["table_cell"]),
                 Paragraph(_money_br(row.valor_unitario), styles["table_cell"]),
+                Paragraph(
+                    _money_br(row.valor_unitario_robusto), styles["table_cell"]
+                ),
                 Paragraph(
                     _percent_br(
                         float(row.peso) * 100 if _finite_number(row.peso) is not None else np.nan
@@ -963,7 +1021,16 @@ def build_inference_report_pdf(
     comparable_table = Table(
         table_data,
         repeatRows=1,
-        colWidths=[13 * mm, 28 * mm, 24 * mm, 34 * mm, 22 * mm, 28 * mm, 18 * mm],
+        colWidths=[
+            12 * mm,
+            23 * mm,
+            20 * mm,
+            29 * mm,
+            29 * mm,
+            18 * mm,
+            23 * mm,
+            13 * mm,
+        ],
         hAlign="LEFT",
     )
     comparable_table.setStyle(
@@ -984,6 +1051,10 @@ def build_inference_report_pdf(
     story.append(Spacer(1, 2.5 * mm))
     story.append(
         Paragraph(
+            "VU robusto: valor unitário ajustado após winsorização por MAD "
+            "ponderada, que limita valores extremos sem excluir o comparável. "
+            "Os pesos são aplicados aos VUs robustos; a soma de peso × VU "
+            "robusto produz o valor unitário estimado. "
             "COD dos comparáveis: desvio absoluto médio dos valores unitários "
             "ajustados em torno da mediana, em percentual. É um diagnóstico "
             "local de dispersão; não substitui o COD de backtesting por razões "
