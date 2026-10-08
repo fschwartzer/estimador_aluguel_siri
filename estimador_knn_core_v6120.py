@@ -343,7 +343,57 @@ def valid_construction_year_mask(series: pd.Series) -> pd.Series:
     )
     return pd.Series(valid, index=series.index, dtype=bool)
 
+def _temporal_weight_factor(
+    data: pd.DataFrame,
+    date_column: str = "data_encaminhamento",
+    half_life_days: float = 180.0,
+    min_factor: float = 0.35,
+) -> tuple[np.ndarray, dict[str, Any]]:
 
+    factors = np.ones(len(data), dtype=float)
+
+    if date_column not in data.columns:
+        return factors, {
+            "temporal_weight_used": False,
+            "temporal_weight_date_column": "",
+        }
+
+    dates = _parse_registration_dates(data[date_column])
+
+    valid = dates.notna()
+    if not valid.any():
+        return factors, {
+            "temporal_weight_used": False,
+            "temporal_weight_date_column": date_column,
+        }
+
+    # A data mais recente da própria base vira a referência.
+    reference_date = dates.loc[valid].max()
+
+    age_days = (
+        reference_date - dates
+    ).dt.total_seconds() / 86400.0
+
+    age_days = age_days.clip(lower=0)
+
+    temporal = np.power(
+        2.0,
+        -age_days / float(half_life_days),
+    )
+
+    temporal = temporal.clip(lower=min_factor, upper=1.0)
+
+    # dado sem data não deve ganhar o mesmo peso de uma oferta recente
+    temporal = temporal.fillna(min_factor)
+
+    return temporal.to_numpy(dtype=float), {
+        "temporal_weight_used": True,
+        "temporal_weight_date_column": date_column,
+        "temporal_weight_reference_date": reference_date,
+        "temporal_weight_half_life_days": float(half_life_days),
+        "temporal_weight_min_factor": float(min_factor),
+    }
+    
 def _positive_values(values: Iterable[float]) -> np.ndarray:
     # Converte também dtypes anuláveis do pandas, evitando que pd.NA
     # interrompa o cálculo do fator de oferta.
@@ -2887,15 +2937,25 @@ def estimate_knn(
     selected_cap = max_individual_weight
 
     epsilon = 1e-9
+    
+    temporal_factors, temporal_diag = _temporal_weight_factor(
+        data,
+        date_column="data_encaminhamento",
+        half_life_days=180.0,
+        min_factor=0.35,
+    )
+    
     for candidate_k in range(min_available, max_available + 1):
         idx = order[:candidate_k]
-        
-        # Peso original do KNN
+    
+        # Peso original do KNN com ajuste temporal
         raw = 1.0 / np.power(
             distances[idx] + epsilon,
             distance_power
         )
-        
+    
+        raw = raw * temporal_factors[idx]
+    
         building_factor = np.ones(candidate_k, dtype=float)
         if location_used:
             # Distância geográfica em metros e bônus para provável mesmo
@@ -2906,10 +2966,9 @@ def estimate_knn(
             transition = (geo_m > 30.0) & (geo_m <= 50.0)
             building_factor[transition] = (
                 1.0
-                + (50.0 - geo_m[transition])
-                / (50.0 - 30.0)
+                + (50.0 - geo_m[transition]) / (50.0 - 30.0)
             )
-        
+    
         # Aplica o bônus antes da normalização
         raw = raw * building_factor
         
@@ -2967,6 +3026,7 @@ def estimate_knn(
     neighbors["_distancia_caracteristicas"] = selected_attr
     neighbors["_distancia_geografica_km"] = selected_geo
     neighbors["_distancia_composta"] = selected_distances
+    neighbors["_fator_temporal"] = temporal_factors[selected_positions]
     neighbors["_peso_knn"] = selected_weights
     neighbors["_valor_unitario_robusto"] = robust_values
     neighbors["_ajuste_robusto"] = values - robust_values
