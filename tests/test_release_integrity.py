@@ -1,6 +1,12 @@
 import ast
+import hashlib
 from pathlib import Path
+import sys
+import types
 import unittest
+from unittest.mock import patch
+
+import pandas as pd
 
 import estimador_knn_core_v6120 as core
 import estimador_knn_schema_v6120 as schema
@@ -56,6 +62,41 @@ class ReleaseIntegrityTests(unittest.TestCase):
         for dependency in ("reportlab", "pillow", "mapbox-vector-tile"):
             self.assertIn(dependency, requirements.casefold())
         self.assertTrue((ROOT / "siri_alugueis_pdf_report.py").is_file())
+
+    def test_pdf_uses_current_source_when_an_old_import_is_cached(self) -> None:
+        # Simula o processo hospedado sobrevivendo à atualização dos arquivos.
+        stale = types.ModuleType("siri_alugueis_pdf_report")
+        def legacy_pdf(*, estimated_unit_value, estimated_total_value,
+                       confidence_score, neighbors, purpose, area_regime_label,
+                       target, latitude_column, longitude_column, type_column,
+                       reference_area_column, logo_path=None):
+            return b"relatorio antigo"
+        stale.build_inference_report_pdf = legacy_pdf
+        stale.calculate_comparable_cod = lambda neighbors: -1
+        tree = ast.parse((ROOT / "app.py").read_text(encoding="utf-8"))
+        setup = []
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.module == "siri_alugueis_pdf_report":
+                setup.append(node)
+            elif isinstance(node, ast.FunctionDef) and node.name in ("_load_exact_source_module", "inference_report_pdf"):
+                node.decorator_list = []
+                setup.append(node)
+            elif isinstance(node, ast.Try) and any(isinstance(child, ast.Call) and isinstance(child.func, ast.Name) and child.func.id == "_load_exact_source_module" for child in ast.walk(node)):
+                setup.append(node)
+            elif isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in ("CORE_MODULE_FILE", "SCHEMA_MODULE_FILE", "PDF_MODULE_FILE", "build_inference_report_pdf", "calculate_comparable_cod") for target in node.targets):
+                setup.append(node)
+        scope = {"__file__":str(ROOT / "app.py"), "Path":Path, "hashlib":hashlib, "sys":sys, "types":types, "pd":pd}
+        neighbors = pd.DataFrame({"area":[30.,40.], "_valor_unitario_original":[30.,40.], "_valor_unitario_ajustado":[30.,40.], "_valor_unitario_robusto":[30.,40.], "_peso_knn":[.5,.5]})
+        with patch.dict(sys.modules, {"siri_alugueis_pdf_report":stale}):
+            exec(compile(ast.Module(body=setup, type_ignores=[]), "app.py", "exec"), scope)
+            pdf = scope["inference_report_pdf"](
+                estimated_unit_value=35., estimated_total_value=1050., confidence_score=70.,
+                neighbors=neighbors, purpose="SALA COMERCIAL", area_regime_label="Área privativa",
+                target={}, latitude_column=None, longitude_column=None,
+                type_column=None, reference_area_column="area", diagnostics={"k_used":2},
+            )
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertGreater(scope["calculate_comparable_cod"](neighbors), 0)
 
     def test_app_maps_siat_year_to_the_new_mapping_field(self) -> None:
         tree = ast.parse((ROOT / "app.py").read_text(encoding="utf-8"))

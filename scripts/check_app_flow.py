@@ -43,7 +43,7 @@ if __name__ == "__main__":
         for widget in app.button:
             if "estimar" in widget.label.casefold() or "calcular" in widget.label.casefold():
                 widget.click()
-        with patch("siri_alugueis_pdf_report._fetch_vector_tile",side_effect=lambda zoom,x,y:(x,y,None)):
+        with patch("urllib.request.urlopen",side_effect=OSError("mapa offline no teste")):
             app.run()
         print("exceptions",list(app.exception))
         print("errors",[w.value for w in app.error])
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         for widget in app.button:
             if "estimar" in widget.label.casefold() or "calcular" in widget.label.casefold():
                 widget.click()
-        with patch("siri_alugueis_pdf_report._fetch_vector_tile",side_effect=lambda zoom,x,y:(x,y,None)):
+        with patch("urllib.request.urlopen",side_effect=OSError("mapa offline no teste")):
             app.run()
         assert not app.exception and not app.error
         assert len(app.get("download_button"))==2

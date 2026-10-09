@@ -19,10 +19,6 @@ from geocodificador_porto_alegre import (
     load_street_axis_index,
     parse_street_and_number,
 )
-from siri_alugueis_pdf_report import (
-    build_inference_report_pdf,
-    calculate_comparable_cod,
-)
 
 APP_NAME = "estimador_aluguel_siri"
 APP_EDITION = "1.1.0"
@@ -49,6 +45,7 @@ st.set_page_config(
 MODULE_BUILD_ID = "estimador-aluguel-siri-1.1.0-20261009"
 CORE_MODULE_FILE = "estimador_knn_core_v6120.py"
 SCHEMA_MODULE_FILE = "estimador_knn_schema_v6120.py"
+PDF_MODULE_FILE = "siri_alugueis_pdf_report.py"
 
 
 def _load_exact_source_module(
@@ -101,12 +98,21 @@ try:
         SCHEMA_MODULE_FILE,
         "_estimador_knn_schema_runtime_v6120",
     )
+    # Uma importação comum pode reutilizar o PDF anterior durante hot reload.
+    _pdf, _pdf_path, _pdf_hash = _load_exact_source_module(
+        PDF_MODULE_FILE,
+        "_siri_alugueis_pdf_report_runtime",
+    )
 except Exception as exc:
     st.error(
         "Os módulos exclusivos do aplicativo não puderam ser carregados."
     )
     st.code(f"{type(exc).__name__}: {exc}")
     st.stop()
+
+
+build_inference_report_pdf = _pdf.build_inference_report_pdf
+calculate_comparable_cod = _pdf.calculate_comparable_cod
 
 
 _required_knn = {
@@ -477,8 +483,13 @@ def inference_report_pdf(
     type_column: str | None,
     reference_area_column: str | None,
     diagnostics: dict | None = None,
+    report_source_hash: str = "",
 ) -> bytes:
-    """Gera e memoriza o PDF associado a uma estimativa concluída."""
+    """Memoriza o PDF pela estimativa e pela versão do gerador carregado.
+
+    report_source_hash participa da chave do Streamlit para impedir reutilizar
+    um PDF anterior quando somente o arquivo do gerador foi atualizado.
+    """
     return build_inference_report_pdf(
         estimated_unit_value=estimated_unit_value,
         estimated_total_value=estimated_total_value,
@@ -3981,6 +3992,7 @@ try:
         type_column=mapping.tipo_informacao,
         reference_area_column=run["reference_area_column"],
         diagnostics=diagnostics,
+        report_source_hash=_pdf_hash,
     )
 except Exception as exc:
     pdf_error = str(exc)
