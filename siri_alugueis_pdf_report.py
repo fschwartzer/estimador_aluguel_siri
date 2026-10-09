@@ -145,6 +145,8 @@ def prepare_report_comparables(
 ) -> pd.DataFrame:
     """Cria uma visão enxuta e estável dos comparáveis usados no relatório."""
     report = pd.DataFrame(index=neighbors.index)
+    from rental_audit import comparable_addresses
+    report["endereco"] = comparable_addresses(neighbors)
     report["tipo"] = (
         _first_series(neighbors, type_column).astype("string").fillna("-")
     )
@@ -152,7 +154,7 @@ def prepare_report_comparables(
         _first_series(neighbors, reference_area_column), errors="coerce"
     )
     report["valor_unitario"] = pd.to_numeric(
-        _first_series(neighbors, "_valor_unitario_ajustado"), errors="coerce"
+        _first_series(neighbors, "_valor_unitario_original" if "_valor_unitario_original" in neighbors.columns else "_valor_unitario_ajustado"), errors="coerce"
     )
     report["valor_unitario_robusto"] = pd.to_numeric(
         _first_series(neighbors, "_valor_unitario_robusto"), errors="coerce"
@@ -172,6 +174,10 @@ def prepare_report_comparables(
     report["longitude"] = pd.to_numeric(
         _first_series(neighbors, longitude_column), errors="coerce"
     )
+    for label, source in (("fator_recencia", "_fator_temporal"), ("fator_edificio", "_fator_edificio"), ("peso_distancia_bruto", "_peso_distancia_bruto"), ("idade_dias", "_idade_observacao_dias")):
+        report[label] = pd.to_numeric(_first_series(neighbors, source), errors="coerce")
+    date_column = neighbors.attrs.get("temporal_date_column", "data_encaminhamento")
+    report["data_observacao"] = _first_series(neighbors, date_column).astype("string").fillna("-")
     report = report.sort_values("peso", ascending=False, na_position="last")
     report = report.reset_index(drop=True)
     report.insert(0, "ponto", np.arange(1, len(report) + 1))
@@ -814,6 +820,7 @@ def build_inference_report_pdf(
     logo_path: str | Path | None = None,
     generated_at: datetime | None = None,
     fetch_map_tiles: bool = True,
+    diagnostics: Mapping[str, Any] | None = None,
 ) -> bytes:
     """Gera o relatório sintético do SIRI Aluguéis em memória."""
     if neighbors.empty:
@@ -889,6 +896,18 @@ def build_inference_report_pdf(
         f"{timestamp.strftime('%d/%m/%Y %H:%M')}"
     )
     story.append(Paragraph(context, styles["subtitle"]))
+    if target.get("endereco"):
+        story.append(Paragraph("Avaliando: " + _paragraph_text(target["endereco"]), styles["body"]))
+    if diagnostics:
+        recency_text = (
+            f"meia-vida {_number_br(diagnostics.get('temporal_weight_half_life_days'), 0)} dias, "
+            f"fator mínimo {_number_br(diagnostics.get('temporal_weight_min_factor'), 2)}"
+            if diagnostics.get("temporal_weight_used") else "desativada ou sem datas utilizáveis"
+        )
+        story.append(Paragraph(
+            f"K: {_number_br(diagnostics.get('k_used'), 0)}; peso físico: {_percent_br(100 * diagnostics.get('similarity_weight', 0))}; "
+            f"geográfico: {_percent_br(100 * diagnostics.get('location_weight', 0))}. Recência: {recency_text}. "
+            f"Referência: {_paragraph_text(diagnostics.get('temporal_weight_reference_date', '-'))}.", styles["note"]))
 
     metrics = [
         _metric_card(
@@ -981,9 +1000,9 @@ def build_inference_report_pdf(
     table_data: list[list[Any]] = [
         [
             Paragraph("Ponto", styles["table_header"]),
-            Paragraph("Tipo", styles["table_header"]),
+            Paragraph("Endereço", styles["table_header"]),
             Paragraph("Área", styles["table_header"]),
-            Paragraph("VU ajustado", styles["table_header"]),
+            Paragraph("VU mensal", styles["table_header"]),
             Paragraph("VU robusto", styles["table_header"]),
             Paragraph("Peso", styles["table_header"]),
             Paragraph("Distância", styles["table_header"]),
@@ -995,7 +1014,7 @@ def build_inference_report_pdf(
         table_data.append(
             [
                 Paragraph(str(int(row.ponto)), styles["table_cell"]),
-                Paragraph(_paragraph_text(row.tipo), styles["table_cell"]),
+                Paragraph(_paragraph_text(row.endereco), styles["table_cell"]),
                 Paragraph(_measurement_br(row.area, "m²"), styles["table_cell"]),
                 Paragraph(_money_br(row.valor_unitario), styles["table_cell"]),
                 Paragraph(
@@ -1022,14 +1041,14 @@ def build_inference_report_pdf(
         table_data,
         repeatRows=1,
         colWidths=[
-            12 * mm,
-            23 * mm,
-            20 * mm,
-            29 * mm,
-            29 * mm,
+            9 * mm,
+            53 * mm,
             18 * mm,
             23 * mm,
-            13 * mm,
+            23 * mm,
+            16 * mm,
+            20 * mm,
+            12 * mm,
         ],
         hAlign="LEFT",
     )
@@ -1048,15 +1067,28 @@ def build_inference_report_pdf(
         )
     )
     story.append(comparable_table)
+    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph("Composição dos pesos", styles["section"]))
+    weight_rows = [[Paragraph(label, styles["table_header"]) for label in ("Ponto", "Data da coleta", "Idade (dias)", "Peso distância bruto", "Fator recência", "Bônus edifício", "Peso final")]]
+    for row in comparables.itertuples(index=False):
+        weight_rows.append([Paragraph(value, styles["table_cell"]) for value in (
+            str(int(row.ponto)), _paragraph_text(row.data_observacao), _number_br(row.idade_dias, 0),
+            _number_br(row.peso_distancia_bruto, 4), _number_br(row.fator_recencia, 3),
+            _number_br(row.fator_edificio, 2), _percent_br(row.peso * 100),
+        )])
+    weight_table = Table(weight_rows, repeatRows=1, colWidths=[10*mm, 33*mm, 23*mm, 31*mm, 26*mm, 27*mm, 24*mm], hAlign="LEFT")
+    weight_table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), NAVY), ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, SOFT_TEAL]), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 1*mm), ("RIGHTPADDING", (0,0), (-1,-1), 1*mm), ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4)]))
+    story.append(weight_table)
     story.append(Spacer(1, 2.5 * mm))
     story.append(
         Paragraph(
-            "VU robusto: valor unitário ajustado após winsorização por MAD "
+            "VU mensal: aluguel anunciado dividido pela área, sem fator oferta/transação. "
+            "VU robusto: valor unitário após winsorização por MAD "
             "ponderada, que limita valores extremos sem excluir o comparável. "
             "Os pesos são aplicados aos VUs robustos; a soma de peso × VU "
             "robusto produz o valor unitário estimado. "
             "COD dos comparáveis: desvio absoluto médio dos valores unitários "
-            "ajustados em torno da mediana, em percentual. É um diagnóstico "
+            "em torno da mediana, em percentual. É um diagnóstico "
             "local de dispersão; não substitui o COD de backtesting por razões "
             "avaliação/preço. O score de confiança é heurístico e não "
             "representa intervalo de confiança estatístico. Revise os "
@@ -1064,6 +1096,7 @@ def build_inference_report_pdf(
             styles["note"],
         )
     )
+    story.append(Paragraph("Peso bruto = distância composta elevada à potência negativa × fator de recência × bônus de edifício. O peso final resulta da normalização com limite individual. Datas ausentes recebem o fator mínimo quando a recência está ativa; observações posteriores à avaliação são excluídas.", styles["note"]))
 
     document.build(story)
     return output.getvalue()

@@ -1,5 +1,5 @@
-SIRI Aluguéis 1.0.0
+SIRI Aluguéis 1.1.0
 Estimador KNN de aluguel baseado exclusivamente em ofertas de locação.
-Build: estimador-aluguel-siri-1.0.0-20260904
-Núcleo: estimador_knn_core_v6120.py / 6.13.0
-Schema: estimador_knn_schema_v6120.py / 6.13.0
+Build: estimador-aluguel-siri-1.1.0-20261009
+Núcleo: estimador_knn_core_v6120.py / 6.14.0
+Schema: estimador_knn_schema_v6120.py / 6.14.0

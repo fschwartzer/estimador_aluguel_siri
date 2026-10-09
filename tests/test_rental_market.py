@@ -95,9 +95,11 @@ class RentalMarketTests(unittest.TestCase):
 
         self.assertEqual(apartment["profile"], "aluguel_global_temporal_2026_09")
         self.assertEqual(apartment["similarity_weight"], 0.35)
-        self.assertEqual(warehouse["profile"], "aluguel_galpao_temporal_2026_09")
-        self.assertEqual(warehouse["similarity_weight"], 0.65)
-        self.assertEqual(warehouse["location_weight"], 0.35)
+        import json
+        from pathlib import Path
+        calibration = json.loads((Path(core.__file__).parent / "artifacts/calibration/aluguel_parametros_2026_10.json").read_text(encoding="utf-8"))
+        self.assertEqual(warehouse, calibration["purpose_parameters"]["galpao / deposito"])
+        self.assertAlmostEqual(warehouse["similarity_weight"] + warehouse["location_weight"], 1.)
 
 
 if __name__ == "__main__":

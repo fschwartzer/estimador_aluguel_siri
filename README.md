@@ -28,6 +28,26 @@ ITBI, o registro não entra na amostra.
 
 ## Parâmetros calibrados
 
+A edição 1.1.0 incorpora a pesquisa de 09/10/2026 (149.842 registros).
+Os perfis, cortes e fatores de recência são lidos de um único JSON versionado.
+Salas comerciais e galpões confirmaram ganho no score de validação posterior;
+lojas, imóveis comerciais e terrenos mantêm o legado porque seus candidatos
+não confirmaram ganho. Finalidades raras estão sinalizadas como sem suporte.
+Essa validação posterior aceita/rejeita candidatos e não é um teste prospectivo
+intocado. Consulte a
+[metodologia de outubro](artifacts/calibration/METODOLOGIA_ALUGUEL_2026_10.md)
+para métricas, faixas de valor, holdout espacial, incerteza e parâmetros.
+
+Recência é um multiplicador exponencial do peso: meia-vida de 180 dias
+e fator mínimo 0,10 para salas; 730 dias e 0,10 para galpões. Não corrige o
+aluguel anunciado para uma data ou para preço contratado. A data da coleta é
+mapeada explicitamente; observações futuras são excluídas antes do preparo.
+PDF e Excel apresentam endereço e os componentes dos pesos. As saídas usam
+VU mensal, sem VU ajustado por oferta/transação. A winsorização robusta continua
+visível e auditável.
+
+### Calibração anterior (setembro de 2026)
+
 A pesquisa `SIRI_pesquisa_aluguel-04.09.2026 11.09.10.xlsx` contém 80.996
 registros entre setembro de 2023 e setembro de 2026. A calibração usou cortes
 temporais e impediu que o mesmo anúncio aparecesse simultaneamente no treino e
@@ -81,6 +101,10 @@ streamlit run app.py
 python -m unittest discover -s tests -v
 ```
 
+Instale `requirements-dev.txt` para executar também a verificação do conteúdo
+dos PDFs. Os scripts em `scripts/` reproduzem a extração, calibração e auditoria;
+dados individuais ficam em `tmp/`, fora do controle de versão.
+
 ## Estrutura principal
 
 ```text
@@ -92,8 +116,8 @@ artifacts/calibration/           calibração versionada e auditável
 tests/                           testes automatizados
 ```
 
-As distâncias geográficas são calculadas em quilômetros a partir de
-latitude/longitude por Haversine. A calibração não normaliza nem agrega dados
+As distâncias geográficas são calculadas em quilômetros pela aproximação
+equiretangular local sobre latitude/longitude EPSG:4326. A calibração não normaliza nem agrega dados
 antes da separação temporal e remove do treino anúncios presentes na validação,
 evitando vazamento direto. Ainda assim, anúncios são preços pedidos, não
 aluguéis contratados, e podem conter dependência espacial ou repetição entre
