@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Iterable
+import json
 import re
 
 import numpy as np
 import pandas as pd
 
 
-MODULE_API_VERSION = "6.13.0"
-MODULE_BUILD_ID = "estimador-aluguel-siri-1.0.0-20260904"
+MODULE_API_VERSION = "6.14.0"
+MODULE_BUILD_ID = "estimador-aluguel-siri-1.1.0-20261009"
 
 
 MIN_CONSTRUCTION_YEAR = 1500
@@ -66,6 +69,7 @@ class ColumnMapping:
     # Mantido ao final e com default para preservar chamadas posicionais
     # existentes em notebooks que usam a interface anterior.
     ano_construcao: str | None = None
+    data_observacao: str | None = None
 
 
 @dataclass(frozen=True)
@@ -268,13 +272,40 @@ def choose_area_regime(
 
 def calibrated_parameters_for_purpose(
     purpose: Any,
+    reference_area_column: str | None = None,
 ) -> dict[str, float | int | str]:
     normalized = normalize_text(purpose)
     selected = CALIBRATED_PURPOSE_PARAMETERS.get(
         normalized,
         CALIBRATED_GLOBAL_PARAMETERS,
     )
-    return dict(selected)
+    parameters = {
+        "temporal_weight_enabled": True, "temporal_half_life_days": 180.0,
+        "temporal_min_factor": 0.35, "building_bonus": 2.0,
+        "local_filter_enabled": True, **selected,
+    }
+    calibration = _load_rental_calibration()
+    override = calibration.get("purpose_parameters", {}).get(normalized)
+    if override and (reference_area_column is None or reference_area_column == override.get("calibrated_area_column")):
+        parameters.update(override)
+    elif override:
+        parameters["calibration_status"] = "regime de área diferente do calibrado; perfil legado"
+    else:
+        evaluation = next((v for k,v in calibration.get("evaluations", {}).items() if normalize_text(k)==normalized), {})
+        if evaluation:
+            parameters["calibration_status"] = evaluation["status"]
+    return dict(parameters)
+
+
+@lru_cache(maxsize=1)
+def _load_rental_calibration() -> dict[str, Any]:
+    path = Path(__file__).resolve().parent / "artifacts" / "calibration" / "aluguel_parametros_2026_10.json"
+    if not path.exists():
+        return {}
+    calibration = json.loads(path.read_text(encoding="utf-8"))
+    if calibration.get("schema_version") != 2:
+        raise ValueError("Versão incompatível do arquivo de calibração de aluguel.")
+    return calibration
 
 
 def to_numeric(series: pd.Series) -> pd.Series:
@@ -348,12 +379,27 @@ def _temporal_weight_factor(
     date_column: str = "data_encaminhamento",
     half_life_days: float = 180.0,
     min_factor: float = 0.35,
+    enabled: bool = True,
+    reference_date: Any = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-
+    if not np.isfinite(half_life_days) or half_life_days <= 0:
+        raise ValueError("A meia-vida da recência deve ser positiva e finita.")
+    if not np.isfinite(min_factor) or not 0 < min_factor <= 1:
+        raise ValueError("O fator mínimo de recência deve estar entre 0 e 1.")
     factors = np.ones(len(data), dtype=float)
+    base_diag = {
+        "temporal_weight_enabled": bool(enabled),
+        "temporal_weight_half_life_days": float(half_life_days),
+        "temporal_weight_min_factor": float(min_factor),
+        "temporal_weight_date_column": date_column,
+        "temporal_weight_date_semantics": "data da observação/coleta, não data do contrato",
+    }
+    if not enabled:
+        return factors, {**base_diag, "temporal_weight_used": False}
 
     if date_column not in data.columns:
         return factors, {
+            **base_diag,
             "temporal_weight_used": False,
             "temporal_weight_date_column": "",
         }
@@ -363,12 +409,15 @@ def _temporal_weight_factor(
     valid = dates.notna()
     if not valid.any():
         return factors, {
+            **base_diag,
             "temporal_weight_used": False,
             "temporal_weight_date_column": date_column,
         }
 
     # A data mais recente da própria base vira a referência.
-    reference_date = dates.loc[valid].max()
+    reference_date = pd.Timestamp(reference_date) if reference_date is not None else dates.loc[valid].max()
+    if pd.isna(reference_date):
+        raise ValueError("A data de referência da recência é inválida.")
 
     age_days = (
         reference_date - dates
@@ -387,11 +436,13 @@ def _temporal_weight_factor(
     temporal = temporal.fillna(min_factor)
 
     return temporal.to_numpy(dtype=float), {
+        **base_diag,
         "temporal_weight_used": True,
         "temporal_weight_date_column": date_column,
         "temporal_weight_reference_date": reference_date,
         "temporal_weight_half_life_days": float(half_life_days),
         "temporal_weight_min_factor": float(min_factor),
+        "temporal_weight_missing_dates": int((~valid).sum()),
     }
     
 def _positive_values(values: Iterable[float]) -> np.ndarray:
@@ -527,7 +578,13 @@ def estimate_offer_discount(
 
 
 def _parse_registration_dates(series: pd.Series) -> pd.Series:
-    parsed = pd.to_datetime(series, errors="coerce", dayfirst=True)
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return pd.to_datetime(series, errors="coerce")
+    text = series.astype("string")
+    parsed = pd.to_datetime(text, errors="coerce", dayfirst=True, format="mixed")
+    iso_mask = text.str.match(r"^\d{4}-\d{2}-\d{2}", na=False)
+    if iso_mask.any():
+        parsed.loc[iso_mask] = pd.to_datetime(text.loc[iso_mask], errors="coerce", format="mixed", dayfirst=False)
     numeric = pd.to_numeric(series, errors="coerce")
     serial_mask = parsed.isna() & numeric.between(1, 100000)
     if serial_mask.any():
@@ -979,6 +1036,7 @@ def _safe_market_prefilter(
     value_kind: str,
     selected_purpose: str,
     floor_purpose: str | None = None,
+    unit_value_floor: float | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     working = data.copy()
     reasons = pd.Series("", index=working.index, dtype="string")
@@ -1055,8 +1113,11 @@ def _safe_market_prefilter(
     purpose_floor_name = floor_purpose or selected_purpose
     purpose_norm = normalize_text(purpose_floor_name)
     purpose_floor = float(
-        PURPOSE_UNIT_VALUE_FLOORS.get(purpose_norm, 0.0)
+        calibrated_parameters_for_purpose(purpose_floor_name).get("unit_value_floor", PURPOSE_UNIT_VALUE_FLOORS.get(purpose_norm, 0.0))
+        if unit_value_floor is None else unit_value_floor
     )
+    if not np.isfinite(purpose_floor) or purpose_floor < 0:
+        raise ValueError("O piso de valor unitário deve ser não negativo e finito.")
     working["_piso_finalidade_vu"] = purpose_floor
 
     purpose_floor_mask = (
@@ -1436,10 +1497,28 @@ def prepare_data(
     conflict_column: str | None = None,
     minimum_without_conflict: int | None = None,
     conflict_values: Iterable[str] = CONFLICT_TYPOLOGICAL_VALUES,
+    unit_value_floor: float | None = None,
+    observation_reference_date: Any = None,
 ) -> PreparationResult:
     validate_mapping(df, mapping)
     if reference_area_column not in df.columns:
         raise ValueError("A coluna de área de referência não existe.")
+
+    date_column = mapping.data_observacao or duplicate_date_column or "data_encaminhamento"
+    if observation_reference_date is not None and date_column in df.columns:
+        reference = pd.Timestamp(observation_reference_date)
+        if pd.isna(reference):
+            raise ValueError("A data de avaliação é inválida.")
+        source = df.copy()
+        if "_row_excel" not in source.columns:
+            source["_row_excel"] = np.arange(2, len(source)+2)
+        future_mask = _parse_registration_dates(source[date_column]).gt(reference)
+        result = prepare_data(source.loc[~future_mask], mapping, selected_purpose, value_kind, reference_area_column, discount_cap, remove_offer_duplicates, duplicate_date_column, duplicate_identifier_columns, duplicate_registration_column, duplicate_value_column, floor_purpose, conflict_column, minimum_without_conflict, conflict_values, unit_value_floor)
+        future = source.loc[future_mask].copy()
+        future["_etapa_controle"] = "validação temporal antes do preparo"
+        future["_motivo_exclusao"] = "Observação posterior à data da avaliação"
+        future["_motivo_alerta"] = ""
+        return _preparation_with_updates(result, diagnostics={**result.diagnostics, "preparation_future_excluded": int(future_mask.sum()), "observation_reference_date": reference.isoformat()}, excluded_data=_ordered_control_columns(pd.concat([future, result.excluded_data], ignore_index=True, sort=False)))
 
     source_data = df.copy()
     if "_row_excel" not in source_data.columns:
@@ -1496,6 +1575,7 @@ def prepare_data(
                     ),
                     duplicate_value_column=duplicate_value_column,
                     floor_purpose=floor_purpose,
+                    unit_value_floor=unit_value_floor,
                     conflict_column=None,
                     minimum_without_conflict=None,
                 )
@@ -1574,6 +1654,7 @@ def prepare_data(
                 ),
                 duplicate_value_column=duplicate_value_column,
                 floor_purpose=floor_purpose,
+                unit_value_floor=unit_value_floor,
                 conflict_column=None,
                 minimum_without_conflict=None,
             )
@@ -1682,6 +1763,7 @@ def prepare_data(
             value_kind=value_kind,
             selected_purpose=selected_purpose,
             floor_purpose=floor_purpose,
+            unit_value_floor=unit_value_floor,
         )
     )
 
@@ -2793,7 +2875,15 @@ def estimate_knn(
     robust_mad_threshold: float = 1.25,
     territorial: bool = False,
     exclude_indices: Iterable[Any] = (),
+    temporal_weight_enabled: bool = True,
+    temporal_half_life_days: float = 180.0,
+    temporal_min_factor: float = 0.35,
+    temporal_reference_date: Any = None,
+    building_bonus: float = 2.0,
+    local_filter_enabled: bool = True,
 ) -> EstimateResult:
+    if not np.isfinite(building_bonus) or building_bonus < 1:
+        raise ValueError("O bônus de edifício deve ser finito e ao menos 1.")
     if not 0.0 < similarity_weight < 1.0:
         raise ValueError("O peso físico deve estar entre 0 e 1.")
     if min_k < 2:
@@ -2886,11 +2976,22 @@ def estimate_knn(
     exclusions = set(exclude_indices)
     if exclusions:
         data = data.loc[~data.index.isin(exclusions)].copy()
+    date_column = mapping.data_observacao or "data_encaminhamento"
+    future_excluded = data.iloc[0:0].copy()
+    if temporal_reference_date is not None and date_column in data.columns:
+        reference = pd.Timestamp(temporal_reference_date)
+        if pd.isna(reference):
+            raise ValueError("A data de avaliação é inválida.")
+        future = _parse_registration_dates(data[date_column]).gt(reference)
+        future_excluded = data.loc[future].copy()
+        future_excluded["_etapa_controle"] = "validação temporal"
+        future_excluded["_motivo_exclusao"] = "Observação posterior à data da avaliação"
+        data = data.loc[~future].copy()
     if len(data) < 2:
         raise ValueError("Não existem candidatos suficientes para a estimativa.")
 
-    data, local_excluded_data, local_filter_diag = (
-        _local_lower_tail_filter(
+    if local_filter_enabled:
+        data, local_excluded_data, local_filter_diag = _local_lower_tail_filter(
             data=data,
             mapping=mapping,
             active_features=active_features,
@@ -2901,7 +3002,9 @@ def estimate_knn(
             max_k=max_k,
             purpose=preparation.diagnostics.get("purpose", ""),
         )
-    )
+    else:
+        local_excluded_data = data.iloc[0:0].copy()
+        local_filter_diag = {"local_low_filter_enabled": False, "local_low_filter_excluded": 0}
     if len(data) < 2:
         raise ValueError(
             "Não existem candidatos suficientes após o filtro local."
@@ -2912,6 +3015,7 @@ def estimate_knn(
             [
                 invalid_construction_years,
                 invalid_locations,
+                future_excluded,
                 local_excluded_data,
             ],
             ignore_index=True,
@@ -2940,9 +3044,11 @@ def estimate_knn(
     
     temporal_factors, temporal_diag = _temporal_weight_factor(
         data,
-        date_column="data_encaminhamento",
-        half_life_days=180.0,
-        min_factor=0.35,
+        date_column=date_column,
+        half_life_days=temporal_half_life_days,
+        min_factor=temporal_min_factor,
+        enabled=temporal_weight_enabled,
+        reference_date=temporal_reference_date,
     )
     
     for candidate_k in range(min_available, max_available + 1):
@@ -2962,11 +3068,11 @@ def estimate_knn(
             # edifício. Sem localização, nenhum bônus espacial é aplicado.
             geo_m = geo_dist[idx] * 1000.0
             same_building = geo_m <= 30.0
-            building_factor[same_building] = 2.0
+            building_factor[same_building] = building_bonus
             transition = (geo_m > 30.0) & (geo_m <= 50.0)
             building_factor[transition] = (
                 1.0
-                + (50.0 - geo_m[transition]) / (50.0 - 30.0)
+                + (building_bonus - 1.0) * (50.0 - geo_m[transition]) / (50.0 - 30.0)
             )
     
         # Aplica o bônus antes da normalização
@@ -3027,7 +3133,13 @@ def estimate_knn(
     neighbors["_distancia_geografica_km"] = selected_geo
     neighbors["_distancia_composta"] = selected_distances
     neighbors["_fator_temporal"] = temporal_factors[selected_positions]
+    neighbors["_peso_distancia_bruto"] = 1.0 / np.power(selected_distances + epsilon, distance_power)
+    neighbors["_fator_edificio"] = building_factor
+    neighbors["_peso_composto_bruto"] = neighbors["_peso_distancia_bruto"] * neighbors["_fator_temporal"] * neighbors["_fator_edificio"]
+    if date_column in neighbors.columns and temporal_diag.get("temporal_weight_reference_date") is not None:
+        neighbors["_idade_observacao_dias"] = (pd.Timestamp(temporal_diag["temporal_weight_reference_date"]) - _parse_registration_dates(neighbors[date_column])).dt.total_seconds() / 86400.0
     neighbors["_peso_knn"] = selected_weights
+    neighbors.attrs["temporal_date_column"] = date_column
     neighbors["_valor_unitario_robusto"] = robust_values
     neighbors["_ajuste_robusto"] = values - robust_values
     neighbors["_contribuicao_valor_unitario"] = (
@@ -3046,6 +3158,11 @@ def estimate_knn(
     )
 
     diagnostics = {
+        **temporal_diag,
+        "temporal_future_excluded": int(len(future_excluded)),
+        "building_bonus": float(building_bonus),
+        "building_bonus_full_radius_m": 30.0,
+        "building_bonus_transition_end_m": 50.0,
         "k_min_requested": int(min_k),
         "k_max_requested": int(max_k),
         "k_used": int(selected_k),

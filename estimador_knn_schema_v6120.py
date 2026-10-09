@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 
 
-MODULE_API_VERSION = "6.13.0"
-MODULE_BUILD_ID = "estimador-aluguel-siri-1.0.0-20260904"
+MODULE_API_VERSION = "6.14.0"
+MODULE_BUILD_ID = "estimador-aluguel-siri-1.1.0-20261009"
 
 
 DERIVED_AREA_LOTE = "__area_total_lote_efetiva"

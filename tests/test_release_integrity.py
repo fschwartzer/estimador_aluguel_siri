@@ -27,8 +27,8 @@ class ReleaseIntegrityTests(unittest.TestCase):
     def test_app_loads_the_published_core_and_schema(self) -> None:
         constants = module_constants(ROOT / "app.py")
 
-        self.assertEqual(constants["APP_EDITION"], "1.0.0")
-        self.assertEqual(constants["CORE_VERSION"], "6.13.0")
+        self.assertEqual(constants["APP_EDITION"], "1.1.0")
+        self.assertEqual(constants["CORE_VERSION"], "6.14.0")
         self.assertEqual(
             constants["CORE_MODULE_FILE"],
             "estimador_knn_core_v6120.py",

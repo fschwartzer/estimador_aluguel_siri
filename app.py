@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from datetime import date
 import hashlib
+import pickle
 import sys
 import types
 
@@ -10,6 +12,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from rental_audit import comparable_addresses, prepare_audit_comparables
 
 from geocodificador_porto_alegre import (
     geocode_porto_alegre_address,
@@ -22,8 +25,8 @@ from siri_alugueis_pdf_report import (
 )
 
 APP_NAME = "estimador_aluguel_siri"
-APP_EDITION = "1.0.0"
-CORE_VERSION = "6.13.0"
+APP_EDITION = "1.1.0"
+CORE_VERSION = "6.14.0"
 
 # Parâmetros internos: não ficam expostos ao usuário da edição LITE.
 MIN_K = 12
@@ -43,7 +46,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-MODULE_BUILD_ID = "estimador-aluguel-siri-1.0.0-20260904"
+MODULE_BUILD_ID = "estimador-aluguel-siri-1.1.0-20261009"
 CORE_MODULE_FILE = "estimador_knn_core_v6120.py"
 SCHEMA_MODULE_FILE = "estimador_knn_schema_v6120.py"
 
@@ -455,7 +458,11 @@ def percent_br(value: float, decimals: int = 1) -> str:
     return f"{value * 100:.{decimals}f}%".replace(".", ",")
 
 
-@st.cache_data(show_spinner=False, max_entries=8)
+@st.cache_data(
+    show_spinner=False,
+    max_entries=8,
+    hash_funcs={pd.DataFrame: lambda data: hashlib.sha256(pickle.dumps(data, protocol=5)).hexdigest()},
+)
 def inference_report_pdf(
     *,
     estimated_unit_value: float,
@@ -469,6 +476,7 @@ def inference_report_pdf(
     longitude_column: str | None,
     type_column: str | None,
     reference_area_column: str | None,
+    diagnostics: dict | None = None,
 ) -> bytes:
     """Gera e memoriza o PDF associado a uma estimativa concluída."""
     return build_inference_report_pdf(
@@ -483,6 +491,7 @@ def inference_report_pdf(
         longitude_column=longitude_column,
         type_column=type_column,
         reference_area_column=reference_area_column,
+        diagnostics=diagnostics,
         logo_path=Path(__file__).resolve().parent / "static" / "siri_alugueis_header.png",
     )
 
@@ -694,6 +703,7 @@ def build_mapping(df: pd.DataFrame) -> tuple[ColumnMapping | None, list[str]]:
         siat_area_total_lote=area_lote,
         testada=testada,
         ano_construcao=ano_construcao,
+        data_observacao=choose_existing(columns, ["data_encaminhamento", "data_coleta", "data_extracao", "data_observacao", "data_anuncio", "data_registro"]),
     )
     return mapping, []
 
@@ -1086,6 +1096,7 @@ def detect_address_columns(df: pd.DataFrame) -> dict[str, str | None]:
             columns,
             [
                 "logradouro",
+                "siat_logradouro",
                 "rua",
                 "avenida",
                 "street",
@@ -1094,12 +1105,13 @@ def detect_address_columns(df: pd.DataFrame) -> dict[str, str | None]:
         ),
         "number": choose_existing(
             columns,
-            ["numero", "número", "numero_endereco", "number"],
+            ["numero", "siat_numero", "número", "numero_endereco", "number"],
         ),
         "neighborhood": choose_existing(
             columns,
             [
                 "bairro",
+                "siat_bairro",
                 "bairro_portal",
                 "bairro_descricao",
                 "neighborhood",
@@ -1792,7 +1804,7 @@ def render_comparables_map(
                 "Tipo: %{customdata[1]}<br>"
                 "Peso no KNN: %{customdata[2]}<br>"
                 "Distância: %{customdata[3]}<br>"
-                "VU ajustado: %{customdata[4]}<br>"
+                "VU mensal: %{customdata[4]}<br>"
                 "VU original: %{customdata[5]}<br>"
                 "Área de referência: %{customdata[6]}<br>"
                 "Testada: %{customdata[7]}<br>"
@@ -1919,7 +1931,7 @@ def render_comparables_map(
                     format="%.3f km",
                 ),
                 "valor_unitario_ajustado": st.column_config.NumberColumn(
-                    "VU ajustado",
+                    "VU mensal",
                     format="R$ %.2f",
                 ),
                 "area_referencia": st.column_config.NumberColumn(
@@ -1991,8 +2003,8 @@ def dataframe_to_excel(
                 ).number_format = "0.00%"
 
         for column_name in (
+            "valor_unitario",
             "valor_unitario_original",
-            "valor_unitario_ajustado",
             "valor_unitario_robusto",
             "contribuicao_valor_unitario",
         ):
@@ -2003,7 +2015,32 @@ def dataframe_to_excel(
                 worksheet.cell(
                     row=row_number,
                     column=column_number,
-                ).number_format = 'R$ #,##0.00'
+                ).number_format = '"R$" #,##0.00'
+
+        for sheet in writer.sheets.values():
+            sheet.sheet_view.showGridLines = False
+            sheet.freeze_panes = "B2"
+            sheet.auto_filter.ref = sheet.dimensions
+            from openpyxl.styles import Alignment, Font, PatternFill
+            for cell in sheet[1]:
+                cell.fill = PatternFill("solid", fgColor="8C2030")
+                cell.font = Font(color="FFFFFF", bold=True)
+                cell.alignment = Alignment(wrap_text=True, vertical="center")
+            for column in sheet.columns:
+                name = str(column[0].value)
+                address_text = any(part in name for part in ("endereco", "logradouro", "complemento", "bairro"))
+                width = 55 if address_text or "motivo" in name or name == "indicador" else min(36, max(16, len(name)+2))
+                if sheet.title == "Diagnosticos" and name == "valor":
+                    width = 85
+                sheet.column_dimensions[column[0].column_letter].width = width
+                if address_text or "motivo" in name or (sheet.title == "Diagnosticos" and name == "valor"):
+                    for cell in column[1:]:
+                        cell.alignment = Alignment(wrap_text=True, vertical="center")
+                        sheet.row_dimensions[cell.row].height = 32
+                if name.startswith("fator_") or name.startswith("peso_"):
+                    for cell in column[1:]:
+                        if name != "peso_knn":
+                            cell.number_format = "0.0000"
 
         for sheet_name in ("Dados_excluidos", "Dados_alertados"):
             control_sheet = writer.sheets[sheet_name]
@@ -2022,7 +2059,7 @@ def dataframe_to_excel(
                     control_sheet.cell(
                         row=row_number,
                         column=column_number,
-                    ).number_format = 'R$ #,##0.00'
+                    ).number_format = '"R$" #,##0.00'
 
     output.seek(0)
     return output.getvalue()
@@ -2374,6 +2411,16 @@ st.caption(
 
 selected_knn_parameters = calibrated_parameters_for_purpose(
     selected_purpose
+)
+if selected_knn_parameters.get("calibration_status"):
+    st.caption(selected_knn_parameters["calibration_status"])
+st.caption(
+    "Recência: " + (
+        f"meia-vida {selected_knn_parameters.get('temporal_half_life_days', 180):.0f} dias; "
+        f"fator mínimo {selected_knn_parameters.get('temporal_min_factor', .35):.2f}."
+        if selected_knn_parameters.get("temporal_weight_enabled", True)
+        else "desativada pelo resultado da calibração."
+    )
 )
 st.caption(
     "Perfil KNN: "
@@ -2891,7 +2938,11 @@ if calculate:
         preparation_errors = {}
         for regime_name, spec in candidate_specs.items():
             try:
+                area_parameters = calibrated_parameters_for_purpose(selected_purpose, spec["column"])
+                area_floor = float(area_parameters.get("unit_value_floor", _knn.PURPOSE_UNIT_VALUE_FLOORS.get(normalize_text(selected_purpose), 0.0)))
                 prepared_candidate = prepare_data(
+                    observation_reference_date=date.today(),
+                    unit_value_floor=area_floor if spec["floor_compatible"] else 0.0,
                     df=df,
                     mapping=mapping,
                     selected_purpose=selected_purpose,
@@ -2994,10 +3045,12 @@ if calculate:
             selected_area_regime
         ]
         reference_area_column = selected_area_spec["column"]
+        selected_knn_parameters = calibrated_parameters_for_purpose(selected_purpose, reference_area_column)
 
         # A área do regime selecionado e, quando informados, o ano da
         # construção e a área do terreno compõem a distância física.
         target = {
+            "endereco": str(target_address or "").strip(),
             "area_construida": (
                 target_area_construida
                 if selected_area_regime
@@ -3118,6 +3171,12 @@ if calculate:
                 ]
             ),
             territorial=territorial,
+            temporal_weight_enabled=bool(selected_knn_parameters.get("temporal_weight_enabled", True)),
+            temporal_half_life_days=float(selected_knn_parameters.get("temporal_half_life_days", 180)),
+            temporal_min_factor=float(selected_knn_parameters.get("temporal_min_factor", .35)),
+            temporal_reference_date=date.today(),
+            building_bonus=float(selected_knn_parameters.get("building_bonus", 2)),
+            local_filter_enabled=bool(selected_knn_parameters.get("local_filter_enabled", True)),
         )
 
         st.session_state["lite_result"] = {
@@ -3576,7 +3635,7 @@ with tabs[0]:
                 st.caption(
                     f"Limite local automático: "
                     f"{money_br(local_lower_bound)}/m², definido por "
-                    f"**{local_cutoff_source}**. Valores ajustados abaixo "
+                    f"**{local_cutoff_source}**. Valores unitários abaixo "
                     "desse limite foram rejeitados."
                 )
             else:
@@ -3680,10 +3739,17 @@ with tabs[0]:
 
 with tabs[1]:
     neighbors = estimate.neighbors.copy()
+    neighbors["endereco_completo"] = comparable_addresses(neighbors)
 
     relevant_columns = unique_preserve_order(
         [
             "_row_excel",
+            "endereco_completo",
+            "siat_logradouro",
+            "siat_numero",
+            "siat_complemento",
+            "siat_bairro",
+            mapping.data_observacao,
             mapping.tipo_informacao,
             finalidade_crawler_source_column,
             siat_purpose_column,
@@ -3714,7 +3780,13 @@ with tabs[1]:
             GEOCODE_CDLOG,
             GEOCODE_FAILURE_REASON,
             "_valor_unitario_original",
-            "_valor_unitario_ajustado",
+            "_fator_temporal",
+            "_fator_edificio",
+            "_peso_distancia_bruto",
+            "_peso_composto_bruto",
+            "_idade_observacao_dias",
+            "_distancia_caracteristicas",
+            "_distancia_composta",
             "_valor_unitario_robusto",
             "_distancia_geografica_km",
             "_peso_knn",
@@ -3725,21 +3797,7 @@ with tabs[1]:
         column for column in relevant_columns if column in neighbors.columns
     ]
 
-    rename = {
-        "_row_excel": "linha_excel",
-        "_valor_unitario_original": "valor_unitario_original",
-        "_valor_unitario_ajustado": "valor_unitario_ajustado",
-        "_valor_unitario_robusto": "valor_unitario_robusto",
-        "_distancia_geografica_km": "distancia_geografica_km",
-        "_peso_knn": "peso_knn",
-        "_contribuicao_valor_unitario": "contribuicao_valor_unitario",
-    }
-
-    neighbors_export = (
-        neighbors.loc[:, relevant_columns]
-        .rename(columns=rename)
-        .sort_values("peso_knn", ascending=False)
-    )
+    neighbors_export = prepare_audit_comparables(neighbors.loc[:, relevant_columns])
 
     # Proteção adicional contra cabeçalhos repetidos no arquivo de origem
     # ou colisões produzidas após a renomeação.
@@ -3779,10 +3837,7 @@ with tabs[1]:
                 "Distância",
                 format="%.3f km",
             ),
-            "valor_unitario_original": st.column_config.NumberColumn(
-                format="R$ %.2f",
-            ),
-            "valor_unitario_ajustado": st.column_config.NumberColumn(
+            "valor_unitario": st.column_config.NumberColumn(
                 format="R$ %.2f",
             ),
             "valor_unitario_robusto": st.column_config.NumberColumn(
@@ -3821,6 +3876,9 @@ diagnostics = {
     ),
     "taxonomia_utilizada": "finalidade_crawler_normalizada",
     "perfil_parametros_knn": run["knn_parameters"]["profile"],
+    "situacao_calibracao": run["knn_parameters"].get("calibration_status", "perfil legado"),
+    "area_calibrada": run["knn_parameters"].get("calibrated_area_column", ""),
+    "endereco_avaliando": run["target"].get("endereco", ""),
     "k_inicial_configurado": run["knn_parameters"]["min_k"],
     "k_maximo_configurado": run["knn_parameters"]["max_k"],
     "vizinhos_efetivos_minimos_configurados": (
@@ -3845,7 +3903,7 @@ diagnostics = {
     "valor_unitario_estimado": estimate.estimated_unit_value,
     "cod_comparaveis": calculate_comparable_cod(estimate.neighbors),
     "definicao_cod_comparaveis": (
-        "desvio absoluto médio dos valores unitários ajustados em torno da "
+        "desvio absoluto médio dos valores unitários em torno da "
         "mediana; diagnóstico local, não COD de backtesting"
     ),
     "area_referencia": run["reference_area_column"],
@@ -3922,6 +3980,7 @@ try:
         ),
         type_column=mapping.tipo_informacao,
         reference_area_column=run["reference_area_column"],
+        diagnostics=diagnostics,
     )
 except Exception as exc:
     pdf_error = str(exc)
