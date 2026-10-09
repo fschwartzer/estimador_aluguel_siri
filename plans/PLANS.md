@@ -1,5 +1,17 @@
 # Plano de execução — SIRI Aluguéis
 
+## Correção do PDF hospedado — 09/10/2026
+
+- [x] Reproduzir a incompatibilidade de `diagnostics` com um módulo PDF antigo em `sys.modules`.
+- [x] Carregar o gerador PDF pelo arquivo publicado, como o core/schema; usar seu hash na chave do cache.
+- [x] Executar regressão do módulo antigo, suíte completa e fluxo com os dois downloads: 39 testes aprovados e AppTest sem erros.
+- [x] Preparar a publicação em PR de correção, com causa, mudança e evidências.
+- [ ] Integrar na main e validar a atualização do aplicativo hospedado.
+
+O repositório principal já possui `diagnostics` no gerador; a importação comum preservava referências antigas no processo durante atualização. O teste de regressão reproduziu o TypeError antes da correção. O mecanismo de calibração não participa deste defeito. A rotina auxiliar de inicialização da skill falhou no ambiente Windows (`NtCreateDirectoryObject: 0xC0000022`); investigação e validação seguem diretamente no projeto.
+
+O site `https://estimadoraluguel.streamlit.app/` abriu normalmente no navegador. A geração com os dois downloads foi validada localmente; ainda não se afirma que o servidor recebeu a correção. Aprendizado: módulos que mudam assinatura também precisam seguir o carregamento por arquivo adotado pelo core/schema em um processo Streamlit que sobrevive à atualização.
+
 ## Atualização de 09/10/2026 — calibração não residencial e rastreabilidade
 
 Fonte de verdade desta atualização. Os critérios anteriores ficam preservados abaixo como histórico.
